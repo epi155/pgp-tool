@@ -659,6 +659,7 @@ public class ReceivePanel extends JPanel {
                     try {
                         handleDecryptResult(get(), isBinary);
                     } catch (Exception ex) {
+                        ex.printStackTrace();
                         Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                         String msg = cause.getMessage();
                         if (msg != null && msg.contains("checksum")) {
@@ -816,11 +817,13 @@ public class ReceivePanel extends JPanel {
                 privateKeyPanel.setProgrammaticSelection(List.of(privKey));
             }
         }
-        if (result.getSignerKeyId() != null) {
-            PGPKeyInfo pubKey = findKeyByKeyId(publicKeyBundle, result.getSignerKeyId());
-            if (pubKey != null) {
-                publicKeyPanel.setProgrammaticSelection(List.of(pubKey));
-            }
+        List<PGPKeyInfo> signerKeys = new ArrayList<>();
+        for (DecryptResult.SignerInfo si : result.getSigners()) {
+            PGPKeyInfo pubKey = findKeyByKeyId(publicKeyBundle, si.getKeyId());
+            if (pubKey != null) signerKeys.add(pubKey);
+        }
+        if (!signerKeys.isEmpty()) {
+            publicKeyPanel.setProgrammaticSelection(signerKeys);
         }
         updateShowUsedButton();
     }

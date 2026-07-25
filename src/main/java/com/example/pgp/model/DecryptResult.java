@@ -1,6 +1,7 @@
 package com.example.pgp.model;
 
 import java.text.SimpleDateFormat;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
@@ -13,25 +14,54 @@ public class DecryptResult {
         SIGNED_INVALID
     }
 
+    public static class SignerInfo {
+        private final long keyId;
+        private final VerificationStatus status;
+        private final String userId;
+        private final int hashAlgorithm;
+        private final Date signatureTime;
+
+        public SignerInfo(long keyId, VerificationStatus status, String userId,
+                          int hashAlgorithm, Date signatureTime) {
+            this.keyId = keyId;
+            this.status = status;
+            this.userId = userId;
+            this.hashAlgorithm = hashAlgorithm;
+            this.signatureTime = signatureTime;
+        }
+
+        public long getKeyId() { return keyId; }
+        public VerificationStatus getStatus() { return status; }
+        public String getUserId() { return userId; }
+        public int getHashAlgorithm() { return hashAlgorithm; }
+        public Date getSignatureTime() { return signatureTime; }
+
+        public String getHashAlgorithmName() {
+            return Metadata.hashName(hashAlgorithm);
+        }
+    }
+
     private final String plainText;
     private final byte[] rawContent;
     private final VerificationStatus verificationStatus;
-    private final Long signerKeyId;
+    private final List<SignerInfo> signers;
     private final Metadata metadata;
     private final CompoundMessage compoundMessage;
     private final java.nio.file.Path tempFilePath;
 
-    public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus, Long signerKeyId,
+    public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
+                         List<SignerInfo> signers,
                          Metadata metadata, CompoundMessage compoundMessage) {
-        this(plainText, rawContent, verificationStatus, signerKeyId, metadata, compoundMessage, null);
+        this(plainText, rawContent, verificationStatus, signers, metadata, compoundMessage, null);
     }
 
-    public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus, Long signerKeyId,
+    public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
+                         List<SignerInfo> signers,
                          Metadata metadata, CompoundMessage compoundMessage, java.nio.file.Path tempFilePath) {
         this.plainText = plainText;
         this.rawContent = rawContent;
         this.verificationStatus = verificationStatus;
-        this.signerKeyId = signerKeyId;
+        this.signers = signers != null ? signers : List.of();
         this.metadata = metadata;
         this.compoundMessage = compoundMessage;
         this.tempFilePath = tempFilePath;
@@ -41,7 +71,10 @@ public class DecryptResult {
     public byte[] getRawContent() { return rawContent != null ? rawContent : readTempContent(); }
     public java.nio.file.Path getTempFilePath() { return tempFilePath; }
     public VerificationStatus getVerificationStatus() { return verificationStatus; }
-    public Long getSignerKeyId() { return signerKeyId; }
+    public Long getSignerKeyId() {
+        return signers.isEmpty() ? null : signers.get(0).getKeyId();
+    }
+    public List<SignerInfo> getSigners() { return signers; }
     public Metadata getMetadata() { return metadata; }
     public CompoundMessage getCompoundMessage() { return compoundMessage; }
 
@@ -55,18 +88,28 @@ public class DecryptResult {
     }
 
     public String getVerificationMessage() {
-        switch (verificationStatus) {
-            case NOT_SIGNED:
-                return "\u2013 Unsigned message";
-            case SIGNED_VERIFIED:
-                return String.format("\u2713 Valid signature from 0x%08X", signerKeyId);
-            case SIGNED_KEY_NOT_FOUND:
-                return String.format("\u26A0 Signed message but key 0x%08X not found", signerKeyId);
-            case SIGNED_INVALID:
-                return String.format("\u26A0 Invalid signature (0x%08X)", signerKeyId);
-            default:
-                return "";
+        if (signers.isEmpty()) {
+            return "\u2013 Unsigned message";
         }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < signers.size(); i++) {
+            SignerInfo s = signers.get(i);
+            if (i > 0) sb.append('\n');
+            switch (s.getStatus()) {
+                case SIGNED_VERIFIED:
+                    sb.append(String.format("\u2713 Valid signature from 0x%08X", s.getKeyId()));
+                    break;
+                case SIGNED_KEY_NOT_FOUND:
+                    sb.append(String.format("\u26A0 Signed message but key 0x%08X not found", s.getKeyId()));
+                    break;
+                case SIGNED_INVALID:
+                    sb.append(String.format("\u26A0 Invalid signature (0x%08X)", s.getKeyId()));
+                    break;
+                default:
+                    break;
+            }
+        }
+        return sb.toString();
     }
 
     public String getMetadataText() {
@@ -78,19 +121,35 @@ public class DecryptResult {
     }
 
     public String getVerificationDetail() {
-        String msg = getVerificationMessage();
-        if (metadata == null) return msg;
-        StringBuilder sb = new StringBuilder(msg);
-        if (metadata.hashAlgorithm != null) {
-            sb.append(" (Hash: ").append(metadata.getHashAlgorithmName()).append(')');
+        if (signers.isEmpty()) {
+            return "\u2013 Unsigned message";
         }
-        sb.append('\n');
-        if (metadata.signatureCreationTime != null) {
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            sb.append("Signature Date: ").append(sdf.format(metadata.signatureCreationTime)).append('\n');
-        }
-        if (metadata.signerUserId != null) {
-            sb.append("Signer: ").append(metadata.signerUserId).append('\n');
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < signers.size(); i++) {
+            SignerInfo s = signers.get(i);
+            if (i > 0) sb.append('\n');
+            switch (s.getStatus()) {
+                case SIGNED_VERIFIED:
+                    sb.append(String.format("\u2713 Valid signature from 0x%08X", s.getKeyId()));
+                    break;
+                case SIGNED_KEY_NOT_FOUND:
+                    sb.append(String.format("\u26A0 Signed message but key 0x%08X not found", s.getKeyId()));
+                    break;
+                case SIGNED_INVALID:
+                    sb.append(String.format("\u26A0 Invalid signature (0x%08X)", s.getKeyId()));
+                    break;
+                default:
+                    break;
+            }
+            sb.append(" (Hash: ").append(s.getHashAlgorithmName()).append(')');
+            sb.append('\n');
+            if (s.getSignatureTime() != null) {
+                sb.append("Signature Date: ").append(sdf.format(s.getSignatureTime())).append('\n');
+            }
+            if (s.getUserId() != null) {
+                sb.append("Signer: ").append(s.getUserId()).append('\n');
+            }
         }
         return sb.toString().stripTrailing();
     }
@@ -248,6 +307,19 @@ public class DecryptResult {
             public Metadata build() { return new Metadata(this); }
         }
 
+        static String hashName(int algo) {
+            switch (algo) {
+                case 1: return "MD5";
+                case 2: return "SHA-1";
+                case 3: return "RIPEMD160";
+                case 8: return "SHA-256";
+                case 9: return "SHA-384";
+                case 10: return "SHA-512";
+                case 11: return "SHA-224";
+                default: return "Hash#" + algo;
+            }
+        }
+
         private static String algName(int algo) {
             switch (algo) {
                 case 1: return "IDEA";
@@ -281,19 +353,6 @@ public class DecryptResult {
                 case 'u': return "UTF8";
                 case 'l': return "Local";
                 default: return "'" + fmt + "'";
-            }
-        }
-
-        private static String hashName(int algo) {
-            switch (algo) {
-                case 1: return "MD5";
-                case 2: return "SHA-1";
-                case 3: return "RIPEMD160";
-                case 8: return "SHA-256";
-                case 9: return "SHA-384";
-                case 10: return "SHA-512";
-                case 11: return "SHA-224";
-                default: return "Hash#" + algo;
             }
         }
     }

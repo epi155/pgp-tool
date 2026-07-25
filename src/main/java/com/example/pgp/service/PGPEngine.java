@@ -27,7 +27,7 @@ public class PGPEngine {
     // ─── Encrypt stream (byte[] → OutputStream) ───────────────────
 
     public void encrypt(byte[] data, String fileName, OutputStream out,
-                        List<PGPPublicKey> encKeys, PGPSecretKey signKey, char[] passphrase,
+                        List<PGPPublicKey> encKeys, List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
                         int symmetricAlgorithm, int compressionAlgorithm,
                         int hashAlgorithm, boolean armor,
                         ProgressCallback progress) throws Exception {
@@ -43,14 +43,14 @@ public class PGPEngine {
             try (OutputStream encOut = encGen.open(armored, new byte[CHUNK_SIZE])) {
                 PGPCompressedDataGenerator comData = new PGPCompressedDataGenerator(compressionAlgorithm);
                 try (OutputStream zipOut = comData.open(encOut)) {
-                    writeSignAndLiteral(zipOut, data, fileName, signKey, passphrase, hashAlgorithm, progress);
+                    writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithm, progress);
                 }
             }
         }
     }
 
     public void encryptPassword(byte[] data, String fileName, OutputStream out,
-                                 char[] password, PGPSecretKey signKey, char[] signPassphrase,
+                                 char[] password, List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
                                  int symmetricAlgorithm, int compressionAlgorithm,
                                  int hashAlgorithm, boolean armor,
                                  ProgressCallback progress) throws Exception {
@@ -64,21 +64,21 @@ public class PGPEngine {
             try (OutputStream encOut = encGen.open(armored, new byte[CHUNK_SIZE])) {
                 PGPCompressedDataGenerator comData = new PGPCompressedDataGenerator(compressionAlgorithm);
                 try (OutputStream zipOut = comData.open(encOut)) {
-                    writeSignAndLiteral(zipOut, data, fileName, signKey, signPassphrase, hashAlgorithm, progress);
+                    writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithm, progress);
                 }
             }
         }
     }
 
     public void encryptCompress(byte[] data, String fileName, OutputStream out,
-                                 PGPSecretKey signKey, char[] signPassphrase,
+                                 List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
                                  int compressionAlgorithm,
                                  int hashAlgorithm, boolean armor,
                                  ProgressCallback progress) throws Exception {
         try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
             PGPCompressedDataGenerator comData = new PGPCompressedDataGenerator(compressionAlgorithm);
             try (OutputStream zipOut = comData.open(armored)) {
-                writeSignAndLiteral(zipOut, data, fileName, signKey, signPassphrase, hashAlgorithm, progress);
+                writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithm, progress);
             }
         }
     }
@@ -86,34 +86,43 @@ public class PGPEngine {
     // ─── writeSignAndLiteral (byte[]) ─────────────────────────────
 
     private void writeSignAndLiteral(OutputStream out, byte[] data, String fileName,
-                                      PGPSecretKey signKey, char[] signPassphrase,
+                                      List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
                                       int hashAlgorithm,
                                       ProgressCallback progress) throws Exception {
         int total = data.length;
-        if (signKey != null) {
-            PGPPrivateKey signPrivateKey = signKey.extractPrivateKey(
-                    new JcePBESecretKeyDecryptorBuilder().setProvider("BC").build(signPassphrase));
-            PGPPublicKey signPubKey = signKey.getPublicKey();
-            PGPSignatureGenerator sigGen = new PGPSignatureGenerator(
-                    new JcaPGPContentSignerBuilder(signPubKey.getAlgorithm(), hashAlgorithm)
-                            .setProvider("BC"));
-            sigGen.init(PGPSignature.BINARY_DOCUMENT, signPrivateKey);
-            PGPOnePassSignature ops = sigGen.generateOnePassVersion(false);
-            ops.encode(out);
+        if (signKeys != null && !signKeys.isEmpty()) {
+            List<PGPSignatureGenerator> sigGens = new ArrayList<>();
+            for (int i = 0; i < signKeys.size(); i++) {
+                char[] passphrase = signPassphrases != null && i < signPassphrases.size()
+                        ? signPassphrases.get(i) : null;
+                PGPPrivateKey signPrivateKey = signKeys.get(i).extractPrivateKey(
+                        new JcePBESecretKeyDecryptorBuilder().setProvider("BC").build(passphrase));
+                PGPPublicKey signPubKey = signKeys.get(i).getPublicKey();
+                PGPSignatureGenerator sigGen = new PGPSignatureGenerator(
+                        new JcaPGPContentSignerBuilder(signPubKey.getAlgorithm(), hashAlgorithm)
+                                .setProvider("BC"));
+                sigGen.init(PGPSignature.BINARY_DOCUMENT, signPrivateKey);
+                sigGen.generateOnePassVersion(false).encode(out);
+                sigGens.add(sigGen);
+            }
             PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
             try (OutputStream litOut = litGen.open(out, PGPLiteralData.BINARY,
                     fileName, total, new Date())) {
                 int offset = 0;
                 while (offset < total) {
                     int chunk = Math.min(CHUNK_SIZE, total - offset);
-                    sigGen.update(data, offset, chunk);
+                    for (PGPSignatureGenerator sigGen : sigGens) {
+                        sigGen.update(data, offset, chunk);
+                    }
                     litOut.write(data, offset, chunk);
                     offset += chunk;
                     if (progress != null)
                         progress.onProgress(offset * 100 / total, "Encrypting...");
                 }
             }
-            sigGen.generate().encode(out);
+            for (PGPSignatureGenerator sigGen : sigGens) {
+                sigGen.generate().encode(out);
+            }
         } else {
             PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
             try (OutputStream dataOutputStream = litGen.open(out, PGPLiteralData.BINARY,
@@ -444,17 +453,14 @@ public class PGPEngine {
 
         if (message instanceof PGPOnePassSignatureList) {
             PGPOnePassSignatureList opsList = (PGPOnePassSignatureList) message;
-            PGPOnePassSignature ops = opsList.get(0);
-            long signerKeyId = ops.getKeyID();
-
-            PGPPublicKey pubKey = findPublicKeyById(publicKeys, signerKeyId);
-
+            // Read literal data (comes after OPS, before signatures)
             PGPLiteralData litData = (PGPLiteralData) plainFact.nextObject();
+            if (litData == null) {
+                throw new PGPException("Missing literal data packet");
+            }
             metaBuilder.literalFormat((char) litData.getFormat())
                        .fileName(litData.getFileName())
                        .modificationTime(litData.getModificationTime());
-
-            // Write literal data to temp file
             InputStream litStream = litData.getDataStream();
             long totalWritten = 0;
             try (OutputStream fileOut = Files.newOutputStream(tempFile)) {
@@ -467,10 +473,81 @@ public class PGPEngine {
             }
             byte[] rawData = totalWritten <= Integer.MAX_VALUE && totalWritten <= 50_000_000
                     ? Files.readAllBytes(tempFile) : null;
-
+            byte[] verifyData = rawData != null ? rawData : Files.readAllBytes(tempFile);
+            // Now read the trailing signature list
             PGPSignatureList sigList = (PGPSignatureList) plainFact.nextObject();
-            PGPSignature sig = sigList.get(0);
-            fillSignatureMeta(metaBuilder, sig);
+
+            // Build keyId → signature map (order may differ from OPS)
+            Map<Long, PGPSignature> sigByKeyId = new HashMap<>();
+            if (sigList != null) {
+                for (int i = 0; i < sigList.size(); i++) {
+                    PGPSignature s = sigList.get(i);
+                    sigByKeyId.put(s.getKeyID(), s);
+                }
+            }
+
+            List<DecryptResult.SignerInfo> signers = new ArrayList<>();
+            DecryptResult.VerificationStatus overallStatus = DecryptResult.VerificationStatus.SIGNED_VERIFIED;
+
+            for (int i = 0; i < opsList.size(); i++) {
+                PGPOnePassSignature ops = opsList.get(i);
+                long signerKeyId = ops.getKeyID();
+                PGPPublicKey pubKey = findPublicKeyById(publicKeys, signerKeyId);
+
+                String userId = null;
+                if (pubKey != null && publicKeyUserIdByKeyId != null) {
+                    userId = publicKeyUserIdByKeyId.get(signerKeyId);
+                }
+
+                int sigHashAlgo = 0;
+                Date sigTime = null;
+                String sigUserId = null;
+                DecryptResult.VerificationStatus signerStatus;
+
+                PGPSignature sig = sigByKeyId.get(signerKeyId);
+
+                if (pubKey == null) {
+                    signerStatus = DecryptResult.VerificationStatus.SIGNED_KEY_NOT_FOUND;
+                    overallStatus = DecryptResult.VerificationStatus.SIGNED_KEY_NOT_FOUND;
+                } else if (sig == null) {
+                    signerStatus = DecryptResult.VerificationStatus.SIGNED_INVALID;
+                    overallStatus = DecryptResult.VerificationStatus.SIGNED_INVALID;
+                } else {
+                    sigHashAlgo = sig.getHashAlgorithm();
+                    try {
+                        PGPSignatureSubpacketVector sv = sig.getHashedSubPackets();
+                        if (sv != null) {
+                            sigUserId = sv.getSignerUserID();
+                            if (sv.getSignatureCreationTime() != null)
+                                sigTime = sv.getSignatureCreationTime();
+                        }
+                        if (sigUserId == null || sigTime == null) {
+                            PGPSignatureSubpacketVector unhashed = sig.getUnhashedSubPackets();
+                            if (unhashed != null) {
+                                if (sigUserId == null) sigUserId = unhashed.getSignerUserID();
+                                if (sigTime == null && unhashed.getSignatureCreationTime() != null)
+                                    sigTime = unhashed.getSignatureCreationTime();
+                            }
+                        }
+                    } catch (Exception ignored) {}
+
+                    ops.init(new JcaPGPContentVerifierBuilderProvider().setProvider("BC"), pubKey);
+                    ops.update(verifyData);
+                    boolean verified = ops.verify(sig);
+                    signerStatus = verified
+                            ? DecryptResult.VerificationStatus.SIGNED_VERIFIED
+                            : DecryptResult.VerificationStatus.SIGNED_INVALID;
+                    if (!verified) {
+                        overallStatus = DecryptResult.VerificationStatus.SIGNED_INVALID;
+                    }
+                }
+
+                signers.add(new DecryptResult.SignerInfo(
+                        signerKeyId, signerStatus,
+                        userId != null ? userId : sigUserId,
+                        sigHashAlgo,
+                        sigTime));
+            }
 
             CompoundMessage compound = null;
             String plainText;
@@ -489,23 +566,19 @@ public class PGPEngine {
                 plainText = "";
             }
 
-            if (pubKey != null) {
-                if (publicKeyUserIdByKeyId != null) {
-                    String uid = publicKeyUserIdByKeyId.get(signerKeyId);
-                    if (uid != null) metaBuilder.signerUserId(uid);
-                }
-                ops.init(new JcaPGPContentVerifierBuilderProvider().setProvider("BC"), pubKey);
-                ops.update(rawData != null ? rawData : Files.readAllBytes(tempFile));
-
-                boolean verified = ops.verify(sig);
-                DecryptResult.VerificationStatus status = verified
-                        ? DecryptResult.VerificationStatus.SIGNED_VERIFIED
-                        : DecryptResult.VerificationStatus.SIGNED_INVALID;
-                return new DecryptResult(plainText, rawData, status, signerKeyId, metaBuilder.build(), compound, tempFile);
-            } else {
-                return new DecryptResult(plainText, rawData,
-                        DecryptResult.VerificationStatus.SIGNED_KEY_NOT_FOUND, signerKeyId, metaBuilder.build(), compound, tempFile);
+            // Use first signer keyId for backward compat Metadata
+            if (!signers.isEmpty()) {
+                long firstKeyId = signers.get(0).getKeyId();
+                metaBuilder.signerKeyId(firstKeyId);
+                metaBuilder.hashAlgorithm(signers.get(0).getHashAlgorithm());
+                if (signers.get(0).getSignatureTime() != null)
+                    metaBuilder.signatureCreationTime(signers.get(0).getSignatureTime());
+                if (signers.get(0).getUserId() != null)
+                    metaBuilder.signerUserId(signers.get(0).getUserId());
             }
+
+            return new DecryptResult(plainText, rawData, overallStatus, signers,
+                    metaBuilder.build(), compound, tempFile);
         }
 
         if (message instanceof PGPLiteralData) {
@@ -550,33 +623,6 @@ public class PGPEngine {
         }
 
         throw new PGPException("Unexpected packet: " + (message != null ? message.getClass().getName() : "null"));
-    }
-
-    // ─── Signature metadata ──────────────────────────────────────
-
-    private void fillSignatureMeta(DecryptResult.Metadata.Builder metaBuilder, PGPSignature sig) {
-        metaBuilder.signerKeyId(sig.getKeyID())
-                   .hashAlgorithm(sig.getHashAlgorithm());
-        try {
-            String uid = null;
-            Date creationTime = null;
-            PGPSignatureSubpacketVector sv = sig.getHashedSubPackets();
-            if (sv != null) {
-                uid = sv.getSignerUserID();
-                if (sv.getSignatureCreationTime() != null)
-                    creationTime = sv.getSignatureCreationTime();
-            }
-            if (uid == null || creationTime == null) {
-                PGPSignatureSubpacketVector unhashed = sig.getUnhashedSubPackets();
-                if (unhashed != null) {
-                    if (uid == null) uid = unhashed.getSignerUserID();
-                    if (creationTime == null && unhashed.getSignatureCreationTime() != null)
-                        creationTime = unhashed.getSignatureCreationTime();
-                }
-            }
-            if (uid != null) metaBuilder.signerUserId(uid);
-            if (creationTime != null) metaBuilder.signatureCreationTime(creationTime);
-        } catch (Exception ignored) {}
     }
 
     private PGPPublicKey findPublicKeyById(List<PGPPublicKey> keys, long keyId) {

@@ -529,8 +529,7 @@ public class SendPanel extends JPanel {
     }
 
     private void updateSignCheckbox() {
-        PGPKeyInfo sel = privateKeyPanel.getSelectedKey();
-        boolean valid = sel != null && sel.canSign();
+        boolean valid = privateKeyPanel.getSelectedKeys().stream().anyMatch(PGPKeyInfo::canSign);
         signCheckBox.setEnabled(valid);
         signCheckBox.setSelected(valid);
         hashAlgoCombo.setEnabled(valid);
@@ -720,34 +719,38 @@ public class SendPanel extends JPanel {
             return;
         }
 
-        PGPSecretKey signKey = null;
-        char[] signPassphrase = null;
+        List<PGPSecretKey> signKeys = new ArrayList<>();
+        List<char[]> signPassphrases = new ArrayList<>();
 
         if (signCheckBox.isSelected()) {
-            PGPKeyInfo selectedPriv = privateKeyPanel.getSelectedKey();
-            if (selectedPriv == null) {
-                JOptionPane.showMessageDialog(this, "Select a private key to sign.",
+            List<PGPKeyInfo> selectedPrivs = privateKeyPanel.getSelectedKeys();
+            if (selectedPrivs.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Select at least one private key to sign.",
                         "Error", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            signKey = selectedPriv.getBcKey(PGPSecretKey.class);
-            long keyId = signKey.getKeyID();
-
-            if (!engine.hasPassphrase(keyId)) {
-                if (engine.cacheEmptyPassphraseIfUnprotected(signKey)) {
-                    signPassphrase = new char[0];
+            for (PGPKeyInfo ki : selectedPrivs) {
+                PGPSecretKey sk = ki.getBcKey(PGPSecretKey.class);
+                long keyId = sk.getKeyID();
+                char[] passphrase;
+                if (!engine.hasPassphrase(keyId)) {
+                    if (engine.cacheEmptyPassphraseIfUnprotected(sk)) {
+                        passphrase = new char[0];
+                    } else {
+                        PasswordDialog dlg = new PasswordDialog(
+                                (Frame) SwingUtilities.getWindowAncestor(this),
+                                resolveSignKeyUserId(ki), ki.getKeyIdHex(),
+                                PasswordDialog.Mode.REQUEST);
+                        dlg.setVisible(true);
+                        passphrase = dlg.getPassword();
+                        if (passphrase == null) return;
+                        engine.cachePassphrase(keyId, passphrase);
+                    }
                 } else {
-                    PasswordDialog dlg = new PasswordDialog(
-                            (Frame) SwingUtilities.getWindowAncestor(this),
-                            resolveSignKeyUserId(selectedPriv), selectedPriv.getKeyIdHex(),
-                            PasswordDialog.Mode.REQUEST);
-                    dlg.setVisible(true);
-                    signPassphrase = dlg.getPassword();
-                    if (signPassphrase == null) return;
-                    engine.cachePassphrase(keyId, signPassphrase);
+                    passphrase = engine.getPassphraseFor(keyId);
                 }
-            } else {
-                signPassphrase = engine.getPassphraseFor(keyId);
+                signKeys.add(sk);
+                signPassphrases.add(passphrase);
             }
         }
 
@@ -761,8 +764,8 @@ public class SendPanel extends JPanel {
             final boolean fHasAttachments = hasAttachments;
             final List<PGPPublicKey> fEncKeys = encKeys;
             final char[] fMessagePassword = messagePassword;
-            final PGPSecretKey fSignKey = signKey;
-            final char[] fSignPassphrase = signPassphrase;
+            final List<PGPSecretKey> fSignKeys = signKeys;
+            final List<char[]> fSignPassphrases = signPassphrases;
 
             Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
             ProgressDialog progress = new ProgressDialog(owner, "Encrypting...");
@@ -785,11 +788,11 @@ public class SendPanel extends JPanel {
                         }
                         boolean armor = armorCheckBox.isSelected();
                         byte[] encrypted = encryptWithMode(fMode, data, fileName, fEncKeys, fMessagePassword,
-                                fSignKey, fSignPassphrase, symAlgo, compAlgo, hashAlgo, armor, progress);
+                                fSignKeys, fSignPassphrases, symAlgo, compAlgo, hashAlgo, armor, progress);
                         Files.write(new File(outputFileField.getText().trim()).toPath(), encrypted);
                     } else {
                         String result = encryptWithModeText(fPlainText, fEncKeys, fMessagePassword,
-                                fSignKey, fSignPassphrase, symAlgo, compAlgo, hashAlgo, progress);
+                                fSignKeys, fSignPassphrases, symAlgo, compAlgo, hashAlgo, progress);
                         if (result != null) {
                             SwingUtilities.invokeLater(() -> cipherTextArea.setText(result));
                         }
@@ -811,7 +814,7 @@ public class SendPanel extends JPanel {
                         if (cause.getMessage() != null && cause.getMessage().contains("checksum")) {
                             JOptionPane.showMessageDialog(SendPanel.this, "Wrong password for private key.",
                                     "Error", JOptionPane.ERROR_MESSAGE);
-                            if (fSignKey != null) engine.clearPassphraseCache();
+                            if (!fSignKeys.isEmpty()) engine.clearPassphraseCache();
                         } else {
                             JOptionPane.showMessageDialog(SendPanel.this,
                                     "Error during encryption:\n" + cause.getMessage(),
@@ -827,7 +830,7 @@ public class SendPanel extends JPanel {
             if (ex.getMessage() != null && ex.getMessage().contains("checksum")) {
                 JOptionPane.showMessageDialog(this, "Wrong password for private key.",
                         "Error", JOptionPane.ERROR_MESSAGE);
-                if (signKey != null) engine.clearPassphraseCache();
+                if (!signKeys.isEmpty()) engine.clearPassphraseCache();
             } else {
                 JOptionPane.showMessageDialog(this, "Error during encryption:\n" + ex.getMessage(),
                         "Error", JOptionPane.ERROR_MESSAGE);
@@ -837,16 +840,16 @@ public class SendPanel extends JPanel {
 
     private byte[] encryptWithMode(String mode, byte[] data, String fileName,
                                     List<PGPPublicKey> encKeys, char[] messagePassword,
-                                    PGPSecretKey signKey, char[] signPassphrase,
+                                    List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
                                     int symAlgo, int compAlgo, int hashAlgo,
                                     boolean armor) throws Exception {
         return encryptWithMode(mode, data, fileName, encKeys, messagePassword,
-                signKey, signPassphrase, symAlgo, compAlgo, hashAlgo, armor, null);
+                signKeys, signPassphrases, symAlgo, compAlgo, hashAlgo, armor, null);
     }
 
     private byte[] encryptWithMode(String mode, byte[] data, String fileName,
                                     List<PGPPublicKey> encKeys, char[] messagePassword,
-                                    PGPSecretKey signKey, char[] signPassphrase,
+                                    List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
                                     int symAlgo, int compAlgo, int hashAlgo,
                                     boolean armor,
                                     ProgressCallback progress) throws Exception {
@@ -854,14 +857,14 @@ public class SendPanel extends JPanel {
         switch (mode) {
             case "Password":
                 engine.encryptPassword(data, fileName, bOut, messagePassword,
-                        signKey, signPassphrase, symAlgo, compAlgo, hashAlgo, armor, progress);
+                        signKeys, signPassphrases, symAlgo, compAlgo, hashAlgo, armor, progress);
                 break;
             case "Compress":
                 engine.encryptCompress(data, fileName, bOut,
-                        signKey, signPassphrase, compAlgo, hashAlgo, armor, progress);
+                        signKeys, signPassphrases, compAlgo, hashAlgo, armor, progress);
                 break;
             default:
-                engine.encrypt(data, fileName, bOut, encKeys, signKey, signPassphrase,
+                engine.encrypt(data, fileName, bOut, encKeys, signKeys, signPassphrases,
                         symAlgo, compAlgo, hashAlgo, armor, progress);
                 break;
         }
@@ -870,22 +873,22 @@ public class SendPanel extends JPanel {
 
     private String encryptWithModeText(String plainText,
                                         List<PGPPublicKey> encKeys, char[] messagePassword,
-                                        PGPSecretKey signKey, char[] signPassphrase,
+                                        List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
                                         int symAlgo, int compAlgo, int hashAlgo) throws Exception {
         return encryptWithModeText(plainText, encKeys, messagePassword,
-                signKey, signPassphrase, symAlgo, compAlgo, hashAlgo, null);
+                signKeys, signPassphrases, symAlgo, compAlgo, hashAlgo, null);
     }
 
     private String encryptWithModeText(String plainText,
                                         List<PGPPublicKey> encKeys, char[] messagePassword,
-                                        PGPSecretKey signKey, char[] signPassphrase,
+                                        List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
                                         int symAlgo, int compAlgo, int hashAlgo,
                                         ProgressCallback progress) throws Exception {
         byte[] data = plainText.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         byte[] result = encryptWithMode(
                 (String) encModeCombo.getSelectedItem(),
                 data, "_CONSOLE", encKeys, messagePassword,
-                signKey, signPassphrase, symAlgo, compAlgo, hashAlgo, true, progress);
+                signKeys, signPassphrases, symAlgo, compAlgo, hashAlgo, true, progress);
         return new String(result, java.nio.charset.StandardCharsets.UTF_8);
     }
 
