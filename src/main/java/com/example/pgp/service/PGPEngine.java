@@ -24,47 +24,6 @@ public class PGPEngine {
 
     private final Map<Long, char[]> passphraseCache = new HashMap<>();
 
-    // ─── Encrypt (byte[] → byte[]) ─────────────────────────────────
-
-    public byte[] encrypt(byte[] data, String fileName, List<PGPPublicKey> encKeys,
-                          PGPSecretKey signKey, char[] passphrase,
-                          int symmetricAlgorithm, int compressionAlgorithm,
-                          int hashAlgorithm, boolean armor) throws Exception {
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-        encrypt(data, fileName, bOut, encKeys, signKey, passphrase,
-                symmetricAlgorithm, compressionAlgorithm, hashAlgorithm, armor, null);
-        return bOut.toByteArray();
-    }
-
-    public byte[] encrypt(byte[] data, String fileName, List<PGPPublicKey> encKeys,
-                          PGPSecretKey signKey, char[] passphrase,
-                          int symmetricAlgorithm, int compressionAlgorithm,
-                          int hashAlgorithm, boolean armor,
-                          ProgressCallback progress) throws Exception {
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-        encrypt(data, fileName, bOut, encKeys, signKey, passphrase,
-                symmetricAlgorithm, compressionAlgorithm, hashAlgorithm, armor, progress);
-        return bOut.toByteArray();
-    }
-
-    public byte[] encrypt(byte[] data, List<PGPPublicKey> encKeys,
-                          PGPSecretKey signKey, char[] passphrase,
-                          int symmetricAlgorithm, int compressionAlgorithm,
-                          int hashAlgorithm, boolean armor) throws Exception {
-        return encrypt(data, "_CONSOLE", encKeys, signKey, passphrase,
-                symmetricAlgorithm, compressionAlgorithm, hashAlgorithm, armor);
-    }
-
-    public String encrypt(String plainText, List<PGPPublicKey> encKeys,
-                          PGPSecretKey signKey, char[] passphrase,
-                          int symmetricAlgorithm, int compressionAlgorithm,
-                          int hashAlgorithm) throws Exception {
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-        encrypt(plainText.getBytes(StandardCharsets.UTF_8), "_CONSOLE", bOut, encKeys, signKey, passphrase,
-                symmetricAlgorithm, compressionAlgorithm, hashAlgorithm, true, null);
-        return bOut.toString(StandardCharsets.UTF_8.name());
-    }
-
     // ─── Encrypt stream (byte[] → OutputStream) ───────────────────
 
     public void encrypt(byte[] data, String fileName, OutputStream out,
@@ -90,27 +49,6 @@ public class PGPEngine {
         }
     }
 
-    public byte[] encryptPassword(byte[] data, String fileName, char[] password,
-                                   PGPSecretKey signKey, char[] signPassphrase,
-                                   int symmetricAlgorithm, int compressionAlgorithm,
-                                   int hashAlgorithm, boolean armor) throws Exception {
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-        encryptPassword(data, fileName, bOut, password, signKey, signPassphrase,
-                symmetricAlgorithm, compressionAlgorithm, hashAlgorithm, armor, null);
-        return bOut.toByteArray();
-    }
-
-    public byte[] encryptPassword(byte[] data, String fileName, char[] password,
-                                   PGPSecretKey signKey, char[] signPassphrase,
-                                   int symmetricAlgorithm, int compressionAlgorithm,
-                                   int hashAlgorithm, boolean armor,
-                                   ProgressCallback progress) throws Exception {
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-        encryptPassword(data, fileName, bOut, password, signKey, signPassphrase,
-                symmetricAlgorithm, compressionAlgorithm, hashAlgorithm, armor, progress);
-        return bOut.toByteArray();
-    }
-
     public void encryptPassword(byte[] data, String fileName, OutputStream out,
                                  char[] password, PGPSecretKey signKey, char[] signPassphrase,
                                  int symmetricAlgorithm, int compressionAlgorithm,
@@ -132,27 +70,6 @@ public class PGPEngine {
         }
     }
 
-    public byte[] encryptCompress(byte[] data, String fileName,
-                                   PGPSecretKey signKey, char[] signPassphrase,
-                                   int compressionAlgorithm,
-                                   int hashAlgorithm, boolean armor) throws Exception {
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-        encryptCompress(data, fileName, bOut, signKey, signPassphrase,
-                compressionAlgorithm, hashAlgorithm, armor, null);
-        return bOut.toByteArray();
-    }
-
-    public byte[] encryptCompress(byte[] data, String fileName,
-                                   PGPSecretKey signKey, char[] signPassphrase,
-                                   int compressionAlgorithm,
-                                   int hashAlgorithm, boolean armor,
-                                   ProgressCallback progress) throws Exception {
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-        encryptCompress(data, fileName, bOut, signKey, signPassphrase,
-                compressionAlgorithm, hashAlgorithm, armor, progress);
-        return bOut.toByteArray();
-    }
-
     public void encryptCompress(byte[] data, String fileName, OutputStream out,
                                  PGPSecretKey signKey, char[] signPassphrase,
                                  int compressionAlgorithm,
@@ -167,12 +84,6 @@ public class PGPEngine {
     }
 
     // ─── writeSignAndLiteral (byte[]) ─────────────────────────────
-
-    private void writeSignAndLiteral(OutputStream out, byte[] data, String fileName,
-                                      PGPSecretKey signKey, char[] signPassphrase,
-                                      int hashAlgorithm) throws Exception {
-        writeSignAndLiteral(out, data, fileName, signKey, signPassphrase, hashAlgorithm, null);
-    }
 
     private void writeSignAndLiteral(OutputStream out, byte[] data, String fileName,
                                       PGPSecretKey signKey, char[] signPassphrase,
@@ -199,7 +110,7 @@ public class PGPEngine {
                     litOut.write(data, offset, chunk);
                     offset += chunk;
                     if (progress != null)
-                        progress.onProgress(offset * 100 / total, "Cifratura in corso...");
+                        progress.onProgress(offset * 100 / total, "Encrypting...");
                 }
             }
             sigGen.generate().encode(out);
@@ -213,17 +124,13 @@ public class PGPEngine {
                     dataOutputStream.write(data, offset, chunk);
                     offset += chunk;
                     if (progress != null)
-                        progress.onProgress(offset * 100 / total, "Compressione in corso...");
+                        progress.onProgress(offset * 100 / total, "Compressing...");
                 }
             }
         }
     }
 
     // ─── getRecipientKeyIds ────────────────────────────────────────
-
-    public List<Long> getRecipientKeyIds(String armoredCipherText) throws Exception {
-        return getRecipientKeyIds(armoredCipherText.getBytes(StandardCharsets.UTF_8));
-    }
 
     public List<Long> getRecipientKeyIds(byte[] cipherData) throws Exception {
         try (InputStream in = openInput(cipherData)) {
@@ -255,14 +162,6 @@ public class PGPEngine {
                                   List<PGPSecretKey> secretKeys,
                                   List<PGPPublicKey> publicKeys,
                                   Map<Long, String> publicKeyUserIdByKeyId,
-                                  Map<Long, String> secretKeyUserIds) throws Exception {
-        return decrypt(cipherData, secretKeys, publicKeys, publicKeyUserIdByKeyId, secretKeyUserIds, null, true);
-    }
-
-    public DecryptResult decrypt(byte[] cipherData,
-                                  List<PGPSecretKey> secretKeys,
-                                  List<PGPPublicKey> publicKeys,
-                                  Map<Long, String> publicKeyUserIdByKeyId,
                                   Map<Long, String> secretKeyUserIds,
                                   ProgressCallback progress,
                                   boolean decodeText) throws Exception {
@@ -275,15 +174,6 @@ public class PGPEngine {
             Files.deleteIfExists(tempFile);
             throw e;
         }
-    }
-
-    public DecryptResult decrypt(String armoredCipherText,
-                                  List<PGPSecretKey> secretKeys,
-                                  List<PGPPublicKey> publicKeys,
-                                  Map<Long, String> publicKeyUserIdByKeyId,
-                                  Map<Long, String> secretKeyUserIds) throws Exception {
-        return decrypt(armoredCipherText.getBytes(StandardCharsets.UTF_8), secretKeys,
-                publicKeys, publicKeyUserIdByKeyId, secretKeyUserIds);
     }
 
     // ─── Decrypt stream (byte[] → DecryptResult with temp file) ──
@@ -369,12 +259,6 @@ public class PGPEngine {
 
     public DecryptResult decryptPassword(byte[] data, char[] password,
                                            List<PGPPublicKey> publicKeys,
-                                           Map<Long, String> publicKeyUserIdByKeyId) throws Exception {
-        return decryptPassword(data, password, publicKeys, publicKeyUserIdByKeyId, null, true);
-    }
-
-    public DecryptResult decryptPassword(byte[] data, char[] password,
-                                           List<PGPPublicKey> publicKeys,
                                            Map<Long, String> publicKeyUserIdByKeyId,
                                            ProgressCallback progress,
                                            boolean decodeText) throws Exception {
@@ -385,12 +269,6 @@ public class PGPEngine {
             Files.deleteIfExists(tempFile);
             throw e;
         }
-    }
-
-    public DecryptResult decryptCompress(byte[] data,
-                                           List<PGPPublicKey> publicKeys,
-                                           Map<Long, String> publicKeyUserIdByKeyId) throws Exception {
-        return decryptCompress(data, publicKeys, publicKeyUserIdByKeyId, null, true);
     }
 
     public DecryptResult decryptCompress(byte[] data,
@@ -439,9 +317,10 @@ public class PGPEngine {
             this.progress = progress;
         }
         @Override public int read() throws IOException {
-            int b = delegate.read();
-            if (b >= 0) { count++; tick(); }
-            return b;
+            byte[] one = new byte[1];
+            int n = delegate.read(one, 0, 1);
+            if (n > 0) { count++; tick(); }
+            return n > 0 ? one[0] & 0xFF : -1;
         }
         @Override public int read(byte[] b, int off, int len) throws IOException {
             int n = delegate.read(b, off, len);
@@ -452,7 +331,7 @@ public class PGPEngine {
         private void tick() {
             if (progress != null) {
                 int pct = Math.min(count * 100 / Math.max(total, 1), 100);
-                progress.onProgress(pct, "Decifratura in corso...");
+                progress.onProgress(pct, "Decrypting...");
             }
         }
     }
@@ -548,7 +427,8 @@ public class PGPEngine {
             throw new PGPException("Unexpected PGP message format: " + (message != null ? message.getClass().getName() : "null"));
         }
 
-        while (clearStream.read() >= 0) {}
+        byte[] drainBuf = new byte[8192];
+        while (clearStream.read(drainBuf) >= 0) {}
         return result;
     }
 
@@ -686,14 +566,13 @@ public class PGPEngine {
                 if (sv.getSignatureCreationTime() != null)
                     creationTime = sv.getSignatureCreationTime();
             }
-            if (uid == null) {
-                sv = sig.getUnhashedSubPackets();
-                if (sv != null) uid = sv.getSignerUserID();
-            }
-            if (creationTime == null) {
-                sv = sig.getUnhashedSubPackets();
-                if (sv != null && sv.getSignatureCreationTime() != null)
-                    creationTime = sv.getSignatureCreationTime();
+            if (uid == null || creationTime == null) {
+                PGPSignatureSubpacketVector unhashed = sig.getUnhashedSubPackets();
+                if (unhashed != null) {
+                    if (uid == null) uid = unhashed.getSignerUserID();
+                    if (creationTime == null && unhashed.getSignatureCreationTime() != null)
+                        creationTime = unhashed.getSignatureCreationTime();
+                }
             }
             if (uid != null) metaBuilder.signerUserId(uid);
             if (creationTime != null) metaBuilder.signatureCreationTime(creationTime);

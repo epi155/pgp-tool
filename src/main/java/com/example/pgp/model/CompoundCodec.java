@@ -1,8 +1,12 @@
 package com.example.pgp.model;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,10 +49,6 @@ public class CompoundCodec {
         }
 
         dataOut.flush();
-    }
-
-    public static CompoundMessage decode(byte[] data) throws IOException {
-        return decode(new ByteArrayInputStream(data), data.length, null);
     }
 
     public static CompoundMessage decode(InputStream in, int totalSize, Path tempFile) throws IOException {
@@ -123,19 +123,4 @@ public class CompoundCodec {
         return true;
     }
 
-    public static boolean isCompound(InputStream in) throws IOException {
-        InputStream buf = in.markSupported() ? null : new BufferedInputStream(in);
-        if (buf != null) in = buf;
-        in.mark(4);
-        boolean result = true;
-        for (int i = 0; i < 4; i++) {
-            int b = in.read();
-            if (b < 0 || (byte) b != MAGIC[i]) {
-                result = false;
-                break;
-            }
-        }
-        in.reset();
-        return result;
-    }
 }

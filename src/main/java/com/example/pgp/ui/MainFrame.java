@@ -14,7 +14,7 @@ public class MainFrame extends JFrame {
     private final SendPanel sendPanel;
     private final ReceivePanel receivePanel;
 
-    public MainFrame() {
+    public MainFrame(boolean showKeyTab) {
         setTitle("PGP Tool");
         setIconImage(new ImageIcon(getClass().getResource("/891399.png")).getImage());
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -27,7 +27,9 @@ public class MainFrame extends JFrame {
         tabbedPane.addTab("Send", sendPanel);
         receivePanel = new ReceivePanel(engine);
         tabbedPane.addTab("Receive", receivePanel);
-        tabbedPane.addTab("Key", new KeyTabPanel());
+        if (showKeyTab) {
+            tabbedPane.addTab("Key", new KeyTabPanel());
+        }
 
         add(tabbedPane);
         restoreWindowState();

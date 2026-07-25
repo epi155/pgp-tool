@@ -21,19 +21,6 @@ public class DecryptResult {
     private final CompoundMessage compoundMessage;
     private final java.nio.file.Path tempFilePath;
 
-    public DecryptResult(String plainText, VerificationStatus verificationStatus, Long signerKeyId) {
-        this(plainText, verificationStatus, signerKeyId, null, null);
-    }
-
-    public DecryptResult(String plainText, VerificationStatus verificationStatus, Long signerKeyId, Metadata metadata) {
-        this(plainText, verificationStatus, signerKeyId, metadata, null);
-    }
-
-    public DecryptResult(String plainText, VerificationStatus verificationStatus, Long signerKeyId,
-                         Metadata metadata, CompoundMessage compoundMessage) {
-        this(plainText, null, verificationStatus, signerKeyId, metadata, compoundMessage);
-    }
-
     public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus, Long signerKeyId,
                          Metadata metadata, CompoundMessage compoundMessage) {
         this(plainText, rawContent, verificationStatus, signerKeyId, metadata, compoundMessage, null);
@@ -70,13 +57,13 @@ public class DecryptResult {
     public String getVerificationMessage() {
         switch (verificationStatus) {
             case NOT_SIGNED:
-                return "\u2013 Messaggio non firmato";
+                return "\u2013 Unsigned message";
             case SIGNED_VERIFIED:
-                return String.format("\u2713 Firma valida da 0x%08X", signerKeyId);
+                return String.format("\u2713 Valid signature from 0x%08X", signerKeyId);
             case SIGNED_KEY_NOT_FOUND:
-                return String.format("\u26A0 Messaggio firmato ma chiave 0x%08X non trovata", signerKeyId);
+                return String.format("\u26A0 Signed message but key 0x%08X not found", signerKeyId);
             case SIGNED_INVALID:
-                return String.format("\u26A0 Firma NON valida (0x%08X)", signerKeyId);
+                return String.format("\u26A0 Invalid signature (0x%08X)", signerKeyId);
             default:
                 return "";
         }
@@ -230,24 +217,6 @@ public class DecryptResult {
 
         public String getHashAlgorithmName() {
             return hashAlgorithm != null ? hashName(hashAlgorithm) : "";
-        }
-
-        public String formatSignature() {
-            if (signerKeyId == null && hashAlgorithm == null
-                    && signatureCreationTime == null && signerUserId == null) {
-                return "";
-            }
-            StringBuilder sb = new StringBuilder();
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            if (signerKeyId != null)
-                sb.append("Signer Key ID: 0x").append(String.format("%08X", signerKeyId)).append('\n');
-            if (hashAlgorithm != null)
-                sb.append("Hash: ").append(hashName(hashAlgorithm)).append('\n');
-            if (signatureCreationTime != null)
-                sb.append("Signature Date: ").append(sdf.format(signatureCreationTime)).append('\n');
-            if (signerUserId != null)
-                sb.append("Signer: ").append(signerUserId).append('\n');
-            return sb.toString().stripTrailing();
         }
 
         public static class Builder {

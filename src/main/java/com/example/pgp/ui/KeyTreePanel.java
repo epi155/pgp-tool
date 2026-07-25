@@ -14,6 +14,7 @@ public class KeyTreePanel extends JPanel {
     private final DefaultMutableTreeNode rootNode;
     private final DefaultTreeModel treeModel;
     private final JTree tree;
+    private final JScrollPane treeScroll;
     private final JButton loadButton;
     private final JLabel sourceLabel;
     private final String title;
@@ -77,8 +78,9 @@ public class KeyTreePanel extends JPanel {
             }
         });
         tree.getSelectionModel().setSelectionMode(TreeSelectionModel.DISCONTIGUOUS_TREE_SELECTION);
+        tree.setCellRenderer(new KeyTreeCellRenderer());
 
-        JScrollPane treeScroll = new JScrollPane(tree);
+        treeScroll = new JScrollPane(tree);
         treeScroll.setPreferredSize(new Dimension(280, 0));
         add(treeScroll, BorderLayout.CENTER);
 
@@ -180,6 +182,7 @@ public class KeyTreePanel extends JPanel {
 
         if (autoSelectEnabled && keysToShow.size() == 1 && filterText.isEmpty()) {
             selectDefaultKey(keysToShow.get(0));
+            SwingUtilities.invokeLater(() -> treeScroll.getHorizontalScrollBar().setValue(0));
         }
     }
 
@@ -257,11 +260,11 @@ public class KeyTreePanel extends JPanel {
     }
 
     private PGPKeyInfo findMasterKey(PGPKeyInfo key) {
-        if (allKeys == null) return null;
+        if (allKeys == null || key == null) return null;
         for (PGPKeyInfo master : allKeys) {
-            if (key == master) return master;
+            if (key.getKeyId() == master.getKeyId()) return master;
             for (PGPKeyInfo sub : master.getSubKeys()) {
-                if (key == sub) return master;
+                if (key.getKeyId() == sub.getKeyId()) return master;
             }
         }
         return null;
@@ -356,18 +359,6 @@ public class KeyTreePanel extends JPanel {
         return allKeys != null && allKeys.size() > 1;
     }
 
-    public List<Object> getAllBcKeys() {
-        List<Object> result = new ArrayList<>();
-        if (keys == null) return result;
-        for (PGPKeyInfo info : keys) {
-            result.add(info.getBcKey(Object.class));
-            for (PGPKeyInfo sub : info.getSubKeys()) {
-                result.add(sub.getBcKey(Object.class));
-            }
-        }
-        return result;
-    }
-
     public JButton getLoadButton() { return loadButton; }
     public void setLoadEnabled(boolean enabled) { loadButton.setEnabled(enabled); }
     public void setLoadButtonVisible(boolean visible) { loadButton.setVisible(visible); }
@@ -387,7 +378,6 @@ public class KeyTreePanel extends JPanel {
     }
 
     public void setAddButtonEnabled(boolean enabled) {
-        if (enabled && addButton == null) getAddButton();
         if (addButton != null) addButton.setEnabled(enabled);
     }
 
@@ -422,17 +412,24 @@ public class KeyTreePanel extends JPanel {
 
     public void addSelectionListener(javax.swing.event.TreeSelectionListener listener) {
         tree.addTreeSelectionListener(e -> {
-            if (!syncing) syncPersistentWithTree();
+            if (!syncing) {
+                TreePath[] paths = tree.getSelectionPaths();
+                if (paths != null) {
+                    for (TreePath p : paths) {
+                        Object obj = ((DefaultMutableTreeNode) p.getLastPathComponent()).getUserObject();
+                        if (obj instanceof PGPKeyInfo && !matchesRequirement((PGPKeyInfo) obj)) {
+                            tree.removeSelectionPath(p);
+                        }
+                    }
+                }
+                syncPersistentWithTree();
+            }
             listener.valueChanged(e);
         });
     }
 
     public void addViewModeListener(Consumer<Boolean> listener) {
         viewModeListeners.add(listener);
-    }
-
-    public void removeViewModeListener(Consumer<Boolean> listener) {
-        viewModeListeners.remove(listener);
     }
 
     public boolean isSelectedViewActive() {
@@ -471,7 +468,7 @@ public class KeyTreePanel extends JPanel {
 
     private void updateSourceLabel() {
         if (keyringCount > 1) {
-            sourceLabel.setText(keyringCount + " keyring caricati");
+            sourceLabel.setText(keyringCount + " keyrings loaded");
         }
     }
 
@@ -497,5 +494,20 @@ public class KeyTreePanel extends JPanel {
         userSelectionAllowed = false;
         syncing = false;
         persistentSelection.addAll(keysToSelect);
+    }
+
+    private class KeyTreeCellRenderer extends DefaultTreeCellRenderer {
+        @Override
+        public Component getTreeCellRendererComponent(JTree tree, Object value,
+                boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
+            Component c = super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
+            if (!sel) {
+                Object userObj = ((DefaultMutableTreeNode) value).getUserObject();
+                if (userObj instanceof PGPKeyInfo && !matchesRequirement((PGPKeyInfo) userObj)) {
+                    c.setForeground(Color.GRAY);
+                }
+            }
+            return c;
+        }
     }
 }

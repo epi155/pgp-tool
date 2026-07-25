@@ -31,7 +31,7 @@ public class PasswordDialog extends JDialog {
     }
 
     public PasswordDialog(Frame owner, String uidText, String keyIdText, Mode mode) {
-        super(owner, mode == Mode.CREATE ? "Crea password di cifratura" : "Inserisci password chiave privata", true);
+        super(owner, mode == Mode.CREATE ? "Create encryption password" : "Enter private key password", true);
         this.mode = mode;
         setLayout(new BorderLayout(10, 10));
 
@@ -55,7 +55,7 @@ public class PasswordDialog extends JDialog {
 
         int row = 0;
         if (mode == Mode.CREATE) {
-            protectCb = new JCheckBox("Proteggi la chiave con una password", true);
+            protectCb = new JCheckBox("Protect the key with a password", true);
             gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2;
             gbc.weightx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
             fieldsPanel.add(protectCb, gbc);
@@ -64,7 +64,7 @@ public class PasswordDialog extends JDialog {
         }
 
         gbc.gridx = 0; gbc.gridy = row;
-        fieldsPanel.add(new JLabel("Password per " + keyIdText + ":"), gbc);
+        fieldsPanel.add(new JLabel("Password for " + keyIdText + ":"), gbc);
         gbc.gridx = 1; gbc.weightx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
         passwordField = new JPasswordField(20);
         fieldsPanel.add(passwordField, gbc);
@@ -73,13 +73,13 @@ public class PasswordDialog extends JDialog {
         if (mode == Mode.CREATE) {
             gbc.gridx = 0; gbc.gridy = row;
             gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE;
-            fieldsPanel.add(new JLabel("Conferma:"), gbc);
+            fieldsPanel.add(new JLabel("Confirm:"), gbc);
             gbc.gridx = 1; gbc.weightx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
             confirmField = new JPasswordField(20);
             fieldsPanel.add(confirmField, gbc);
             row++;
 
-            showCheckBox = new JCheckBox("Mostra password");
+            showCheckBox = new JCheckBox("Show password");
             gbc.gridx = 1; gbc.gridy = row;
             gbc.weightx = 1; gbc.fill = GridBagConstraints.NONE;
             fieldsPanel.add(showCheckBox, gbc);
@@ -98,7 +98,7 @@ public class PasswordDialog extends JDialog {
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         okBtn = new JButton("OK");
-        JButton cancelBtn = new JButton("Annulla");
+        JButton cancelBtn = new JButton("Cancel");
         buttons.add(okBtn);
         buttons.add(cancelBtn);
         content.add(buttons, BorderLayout.SOUTH);
@@ -171,10 +171,10 @@ public class PasswordDialog extends JDialog {
             if (empty) {
                 statusLabel.setText(" ");
             } else if (match) {
-                statusLabel.setText("\u2713 Password corrispondono");
+                statusLabel.setText("\u2713 Passwords match");
                 statusLabel.setForeground(new Color(0x008800));
             } else {
-                statusLabel.setText("\u2717 Le password non corrispondono");
+                statusLabel.setText("\u2717 Passwords do not match");
                 statusLabel.setForeground(Color.RED.darker());
             }
         } else {

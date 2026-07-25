@@ -7,6 +7,10 @@ import com.example.pgp.model.PGPKeyInfo;
 import com.example.pgp.service.KeyringLoader;
 import com.example.pgp.service.PGPEngine;
 import com.example.pgp.service.ProgressCallback;
+import static com.example.pgp.ui.UIUtils.createPublicFileChooser;
+import static com.example.pgp.ui.UIUtils.createSecretFileChooser;
+import static com.example.pgp.ui.UIUtils.isBinaryContent;
+import static com.example.pgp.ui.UIUtils.wrapInScroll;
 import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPSecretKey;
 
@@ -23,7 +27,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 
 public class ReceivePanel extends JPanel {
 
@@ -57,8 +60,8 @@ public class ReceivePanel extends JPanel {
         this.engine = engine;
         setLayout(new BorderLayout(5, 5));
 
-        publicKeyPanel = new KeyTreePanel("Chiavi pubbliche (verifica firma)", false, false);
-        privateKeyPanel = new KeyTreePanel("Chiavi private (decifratura)", false, false);
+        publicKeyPanel = new KeyTreePanel("Public Keys (Verify Signature)", false, false);
+        privateKeyPanel = new KeyTreePanel("Private Keys (Decryption)", false, false);
         publicKeyPanel.setAutoSelectEnabled(false);
         privateKeyPanel.setAutoSelectEnabled(false);
         publicKeyPanel.setUserSelectionAllowed(false);
@@ -112,9 +115,9 @@ public class ReceivePanel extends JPanel {
                         if (bin) {
                             int ret = JOptionPane.showConfirmDialog(
                                     cipherTextArea,
-                                    "Il file \"" + f.getName() + "\" sembra essere binario.\n"
-                                            + "Incollare comunque il contenuto?",
-                                    "File binario rilevato",
+                                    "The file \"" + f.getName() + "\" appears to be binary.\n"
+                                            + "Paste the content anyway?",
+                                    "Binary file detected",
                                     JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
                             if (ret != JOptionPane.YES_OPTION) return false;
                         }
@@ -123,10 +126,10 @@ public class ReceivePanel extends JPanel {
                             String sizeStr = String.format("%.1f MB", fileSize / (1024.0 * 1024.0));
                             int ret = JOptionPane.showConfirmDialog(
                                     cipherTextArea,
-                                    "Il file \"" + f.getName() + "\" (" + sizeStr + ") supera 1 MB.\n"
-                                            + "Sarebbe preferibile gestirlo come file anziché come messaggio.\n"
-                                            + "Incollare comunque il contenuto?",
-                                    "File di grandi dimensioni",
+                                    "The file \"" + f.getName() + "\" (" + sizeStr + ") exceeds 1 MB.\n"
+                                            + "It would be better to handle it as a file rather than as a message.\n"
+                                            + "Paste the content anyway?",
+                                    "Large file detected",
                                     JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
                             if (ret != JOptionPane.YES_OPTION) return false;
                         }
@@ -172,7 +175,7 @@ public class ReceivePanel extends JPanel {
         JPanel cipherFilePanel = new JPanel(new BorderLayout(5, 5));
         cipherFileField = new JTextField();
         cipherFileField.setEditable(false);
-        JButton cipherBrowseBtn = new JButton("Sfoglia...");
+        JButton cipherBrowseBtn = new JButton("Browse...");
         cipherBrowseBtn.addActionListener(this::browseCipherFile);
         cipherFileField.setTransferHandler(new TransferHandler() {
             @Override public boolean canImport(TransferHandler.TransferSupport support) {
@@ -192,7 +195,7 @@ public class ReceivePanel extends JPanel {
             }
         });
         JPanel fileRow = new JPanel(new BorderLayout(5, 2));
-        fileRow.setBorder(BorderFactory.createTitledBorder("File Cifrato"));
+        fileRow.setBorder(BorderFactory.createTitledBorder("Encrypted File"));
         fileRow.add(new JLabel("File:"), BorderLayout.WEST);
         fileRow.add(cipherFileField, BorderLayout.CENTER);
         JPanel btnEast = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
@@ -203,8 +206,8 @@ public class ReceivePanel extends JPanel {
         attachList = new JList<>(attachListModel);
         attachList.setVisibleRowCount(3);
         JScrollPane attachScroll = new JScrollPane(attachList);
-        attachScroll.setBorder(BorderFactory.createTitledBorder("Allegati"));
-        saveAttachButton = new JButton("Salva allegato...");
+        attachScroll.setBorder(BorderFactory.createTitledBorder("Attachments"));
+        saveAttachButton = new JButton("Save attachment...");
         saveAttachButton.setEnabled(false);
         attachList.addListSelectionListener(e ->
                 saveAttachButton.setEnabled(!attachList.isSelectionEmpty()));
@@ -229,16 +232,16 @@ public class ReceivePanel extends JPanel {
         showUsedBtn.setEnabled(false);
         buttonPanel.add(showUsedBtn);
         centerLeftPanel.add(buttonPanel, BorderLayout.NORTH);
-        centerLeftPanel.add(wrapInScroll(verificationArea, "Verifica Firma"), BorderLayout.CENTER);
+        centerLeftPanel.add(wrapInScroll(verificationArea, "Verify Signature"), BorderLayout.CENTER);
 
         JPanel centerRow = new JPanel(new GridLayout(1, 2, 5, 5));
         centerRow.add(centerLeftPanel);
-        JScrollPane metaScroll = wrapInScroll(encryptionMetadataArea, "Metadati PGP");
+        JScrollPane metaScroll = wrapInScroll(encryptionMetadataArea, "PGP Metadata");
         metaScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         centerRow.add(metaScroll);
 
         JSplitPane bottomSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
-                privateKeyPanel, wrapInScroll(plainTextArea, "Plain Text Decifrato"));
+                privateKeyPanel, wrapInScroll(plainTextArea, "Decrypted Plain Text"));
         bottomSplit.setResizeWeight(0.35);
 
         JPanel outerPanel = new JPanel(new GridBagLayout());
@@ -314,38 +317,15 @@ public class ReceivePanel extends JPanel {
         updateDecryptButton();
     }
 
-    private JScrollPane wrapInScroll(JTextArea ta, String title) {
-        JScrollPane sp = new JScrollPane(ta);
-        sp.setBorder(BorderFactory.createTitledBorder(title));
-        return sp;
-    }
-
     private void setupKeyButtonDrops() {
         publicKeyPanel.getLoadButton().setTransferHandler(
-                createKeyringDropHandler(this::loadPublicKeyring));
+                UIUtils.createKeyringDropHandler(this::loadPublicKeyring));
         publicKeyPanel.getAddButton().setTransferHandler(
-                createKeyringDropHandler(this::loadPublicKeyringAdd));
+                UIUtils.createKeyringDropHandler(this::loadPublicKeyringAdd));
         privateKeyPanel.getLoadButton().setTransferHandler(
-                createKeyringDropHandler(this::loadPrivateKeyring));
+                UIUtils.createKeyringDropHandler(this::loadPrivateKeyring));
         privateKeyPanel.getAddButton().setTransferHandler(
-                createKeyringDropHandler(this::loadPrivateKeyringAdd));
-    }
-
-    private TransferHandler createKeyringDropHandler(Consumer<File> handler) {
-        return new TransferHandler() {
-            @Override public boolean canImport(TransferSupport support) {
-                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
-            }
-            @Override public boolean importData(TransferSupport support) {
-                if (!canImport(support)) return false;
-                try {
-                    java.util.List<File> files = (java.util.List<File>)
-                            support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
-                    if (!files.isEmpty()) handler.accept(files.get(0));
-                    return true;
-                } catch (Exception ex) { return false; }
-            }
-        };
+                UIUtils.createKeyringDropHandler(this::loadPrivateKeyringAdd));
     }
 
     private void loadPublicKeyring(ActionEvent e) {
@@ -364,8 +344,8 @@ public class ReceivePanel extends JPanel {
             publicKeyringPaths.clear();
             publicKeyringPaths.add(file.getAbsolutePath());
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Errore caricamento chiavi pubbliche:\n" + ex.getMessage(),
-                    "Errore", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Error loading public keys:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
             publicKeyBundle = null;
             publicKeyPanel.setKeys(null);
         }
@@ -386,17 +366,7 @@ public class ReceivePanel extends JPanel {
             publicKeyPanel.addKeys(bundle.getKeys());
             publicKeyPanel.incrementKeyringCount();
             if (publicKeyBundle != null) {
-                java.util.Set<Long> ids = new java.util.HashSet<>();
-                for (PGPKeyInfo k : publicKeyBundle.getKeys()) {
-                    ids.add(k.getKeyId());
-                    for (PGPKeyInfo s : k.getSubKeys()) ids.add(s.getKeyId());
-                }
-                for (PGPKeyInfo k : bundle.getKeys()) {
-                    if (!ids.contains(k.getKeyId())) {
-                        publicKeyBundle.getKeys().add(k);
-                        ids.add(k.getKeyId());
-                    }
-                }
+                UIUtils.mergeKeyBundle(publicKeyBundle, bundle);
             } else {
                 publicKeyBundle = bundle;
             }
@@ -404,8 +374,8 @@ public class ReceivePanel extends JPanel {
             updateDecryptButton();
             updateShowUsedButton();
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Errore caricamento chiavi pubbliche:\n" + ex.getMessage(),
-                    "Errore", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Error loading public keys:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -425,8 +395,8 @@ public class ReceivePanel extends JPanel {
             privateKeyringPaths.clear();
             privateKeyringPaths.add(file.getAbsolutePath());
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Errore caricamento chiavi private:\n" + ex.getMessage(),
-                    "Errore", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Error loading private keys:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
             privateKeyBundle = null;
             privateKeyPanel.setKeys(null);
         }
@@ -452,24 +422,14 @@ public class ReceivePanel extends JPanel {
             updateDecryptButton();
             updateShowUsedButton();
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Errore caricamento chiavi private:\n" + ex.getMessage(),
-                    "Errore", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Error loading private keys:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void mergePrivateKeyBundle(KeyBundle bundle) {
         if (privateKeyBundle != null) {
-            java.util.Set<Long> ids = new java.util.HashSet<>();
-            for (PGPKeyInfo k : privateKeyBundle.getKeys()) {
-                ids.add(k.getKeyId());
-                for (PGPKeyInfo s : k.getSubKeys()) ids.add(s.getKeyId());
-            }
-            for (PGPKeyInfo k : bundle.getKeys()) {
-                if (!ids.contains(k.getKeyId())) {
-                    privateKeyBundle.getKeys().add(k);
-                    ids.add(k.getKeyId());
-                }
-            }
+            UIUtils.mergeKeyBundle(privateKeyBundle, bundle);
         } else {
             privateKeyBundle = bundle;
         }
@@ -503,7 +463,9 @@ public class ReceivePanel extends JPanel {
     }
 
     private void updateDecryptButton() {
-        decryptButton.setEnabled(true);
+        boolean hasPrivateKeys = privateKeyBundle != null && !privateKeyBundle.getKeys().isEmpty();
+        boolean hasPublicKeys = publicKeyBundle != null && !publicKeyBundle.getKeys().isEmpty();
+        decryptButton.setEnabled(hasPrivateKeys || hasPublicKeys);
     }
 
     private void clearDecryptResults() {
@@ -518,17 +480,17 @@ public class ReceivePanel extends JPanel {
     private void browseCipherFile(ActionEvent e) {
         JFileChooser fc = new JFileChooser();
         fc.addChoosableFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                "Tutti i file (*.*)", "*"));
+                "All files (*.*)", "*"));
         fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                "File PGP cifrati (*.asc, *.gpg, *.pgp)", "asc", "gpg", "pgp"));
+                "PGP encrypted files (*.asc, *.gpg, *.pgp)", "asc", "gpg", "pgp"));
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
                 cipherBytes = Files.readAllBytes(fc.getSelectedFile().toPath());
                 cipherFileField.setText(fc.getSelectedFile().getAbsolutePath());
                 clearDecryptResults();
             } catch (IOException ex) {
-                JOptionPane.showMessageDialog(this, "Errore lettura file:\n" + ex.getMessage(),
-                        "Errore", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Error reading file:\n" + ex.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
@@ -543,8 +505,8 @@ public class ReceivePanel extends JPanel {
             try {
                 att.saveTo(fc.getSelectedFile().toPath());
             } catch (IOException ex) {
-                JOptionPane.showMessageDialog(this, "Errore salvataggio allegato:\n" + ex.getMessage(),
-                        "Errore", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Error saving attachment:\n" + ex.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
@@ -565,13 +527,13 @@ public class ReceivePanel extends JPanel {
         String cipherText = cipherTextArea.getText();
         if (isBinary) {
             if (cipherBytes == null) {
-                JOptionPane.showMessageDialog(this, "Seleziona un file cifrato.",
-                        "Attenzione", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Select an encrypted file.",
+                        "Warning", JOptionPane.WARNING_MESSAGE);
                 return;
             }
         } else if (cipherText.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Incolla il messaggio cifrato.",
-                    "Attenzione", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Paste the encrypted message.",
+                    "Warning", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
@@ -590,8 +552,8 @@ public class ReceivePanel extends JPanel {
             }
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this,
-                    "Impossibile analizzare il messaggio:\n" + ex.getMessage(),
-                    "Errore", JOptionPane.ERROR_MESSAGE);
+                    "Unable to parse the message:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
@@ -611,8 +573,8 @@ public class ReceivePanel extends JPanel {
             }
 
             if (secretKeys.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Nessuna chiave privata caricata.",
-                        "Errore", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "No private keys loaded.",
+                        "Error", JOptionPane.WARNING_MESSAGE);
                 return;
             }
 
@@ -632,15 +594,15 @@ public class ReceivePanel extends JPanel {
                             .reduce((a, b) -> a + ", " + b)
                             .orElse("");
                     JOptionPane.showMessageDialog(this,
-                            "Nessuna chiave privata corrispondente trovata.\n"
-                            + "Key ID richieste dal messaggio: " + keyIds,
-                            "Errore", JOptionPane.WARNING_MESSAGE);
+                            "No matching private key found.\n"
+                            + "Key IDs required by the message: " + keyIds,
+                            "Error", JOptionPane.WARNING_MESSAGE);
                     return;
                 }
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this,
-                        "Impossibile analizzare il messaggio cifrato:\n" + ex.getMessage(),
-                        "Errore", JOptionPane.ERROR_MESSAGE);
+                        "Unable to parse the encrypted message:\n" + ex.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
@@ -683,7 +645,7 @@ public class ReceivePanel extends JPanel {
             }
 
             Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
-            ProgressDialog progress = new ProgressDialog(owner, "Decifratura in corso");
+            ProgressDialog progress = new ProgressDialog(owner, "Decrypting...");
             boolean decodeText = !isBinary;
             SwingWorker<DecryptResult, Void> worker = new SwingWorker<>() {
                 @Override
@@ -701,17 +663,17 @@ public class ReceivePanel extends JPanel {
                         String msg = cause.getMessage();
                         if (msg != null && msg.contains("checksum")) {
                             JOptionPane.showMessageDialog(ReceivePanel.this,
-                                    "Password errata per la chiave privata.",
-                                    "Errore", JOptionPane.ERROR_MESSAGE);
+                                    "Wrong password for private key.",
+                                    "Error", JOptionPane.ERROR_MESSAGE);
                             engine.clearPassphraseCache();
                         } else if (msg != null && msg.contains("No matching private key")) {
                             JOptionPane.showMessageDialog(ReceivePanel.this,
-                                    "Nessuna chiave privata corrispondente trovata per questo messaggio.",
-                                    "Errore", JOptionPane.ERROR_MESSAGE);
+                                    "No matching private key found for this message.",
+                                    "Error", JOptionPane.ERROR_MESSAGE);
                         } else {
                             JOptionPane.showMessageDialog(ReceivePanel.this,
-                                    "Errore durante la decifratura:\n" + msg,
-                                    "Errore", JOptionPane.ERROR_MESSAGE);
+                                    "Error during decryption:\n" + msg,
+                                    "Error", JOptionPane.ERROR_MESSAGE);
                         }
                     }
                 }
@@ -725,15 +687,15 @@ public class ReceivePanel extends JPanel {
         if ("PBE".equals(mode)) {
             PasswordDialog dlg = new PasswordDialog(
                     (Frame) SwingUtilities.getWindowAncestor(this),
-                    "messaggio cifrato con password",
+                    "password encrypted message",
                     PasswordDialog.Mode.REQUEST,
-                    "Inserisci password di cifratura");
+                    "Enter encryption password");
             dlg.setVisible(true);
             char[] password = dlg.getPassword();
             if (password == null) return;
 
             Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
-            ProgressDialog progress = new ProgressDialog(owner, "Decifratura in corso");
+            ProgressDialog progress = new ProgressDialog(owner, "Decrypting...");
             char[] passwordCopy = password;
             boolean decodeText = !isBinary;
             SwingWorker<DecryptResult, Void> worker = new SwingWorker<>() {
@@ -750,8 +712,8 @@ public class ReceivePanel extends JPanel {
                     } catch (Exception ex) {
                         Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                         JOptionPane.showMessageDialog(ReceivePanel.this,
-                                "Errore durante la decifratura:\n" + cause.getMessage(),
-                                "Errore", JOptionPane.ERROR_MESSAGE);
+                                "Error during decryption:\n" + cause.getMessage(),
+                                "Error", JOptionPane.ERROR_MESSAGE);
                     }
                 }
             };
@@ -762,7 +724,7 @@ public class ReceivePanel extends JPanel {
 
         // Compress mode
         Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
-        ProgressDialog progress = new ProgressDialog(owner, "Decompressione in corso");
+            ProgressDialog progress = new ProgressDialog(owner, "Decompressing...");
         boolean decodeText = !isBinary;
         SwingWorker<DecryptResult, Void> worker = new SwingWorker<>() {
             @Override
@@ -778,8 +740,8 @@ public class ReceivePanel extends JPanel {
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     JOptionPane.showMessageDialog(ReceivePanel.this,
-                            "Errore durante la decompressione:\n" + cause.getMessage(),
-                            "Errore", JOptionPane.ERROR_MESSAGE);
+                            "Error during decompression:\n" + cause.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
         };
@@ -828,16 +790,16 @@ public class ReceivePanel extends JPanel {
                     } else if (rawContent != null) {
                         java.nio.file.Files.write(dest, rawContent);
                     }
-                    plainTextArea.setText("[File decifrato salvato in: " + dest + "]");
+                    plainTextArea.setText("[Decrypted file saved to: " + dest + "]");
                     saveAttachButton.setEnabled(false);
                 } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this, "Errore salvataggio file:\n" + ex.getMessage(),
-                            "Errore", JOptionPane.ERROR_MESSAGE);
-                    plainTextArea.setText("[Errore salvataggio file. Usa 'Salva allegato' per riprovare.]");
+                    JOptionPane.showMessageDialog(this, "Error saving file:\n" + ex.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
+                    plainTextArea.setText("[Error saving file. Use 'Save attachment' to retry.]");
                     wrapBinaryAsAttachment(result, origName, tempPath, rawContent);
                 }
             } else {
-                plainTextArea.setText("[File decifrato non salvato. Usa il pulsante 'Salva allegato' per salvarlo.]");
+                plainTextArea.setText("[Decrypted file not saved. Use the 'Save attachment' button to save it.]");
                 wrapBinaryAsAttachment(result, origName, tempPath, rawContent);
             }
         } else {
@@ -931,35 +893,7 @@ public class ReceivePanel extends JPanel {
         return null;
     }
 
-    private static boolean isBinaryContent(byte[] data, int len) {
-        int control = 0;
-        for (int i = 0; i < len; i++) {
-            int b = data[i] & 0xFF;
-            if (b == 0x00) return true;
-            if (b < 0x09 || (b > 0x0D && b < 0x20) || b > 0x7E) control++;
-        }
-        return (double) control / len > 0.30;
-    }
 
-    private JFileChooser createPublicFileChooser() {
-        JFileChooser fc = new JFileChooser();
-        fc.addChoosableFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                "Tutti i file (*.*)", "*"));
-        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                "PGP Public Key files (*.asc, *.gpg, *.pgp, *.key, *.pkr)",
-                "asc", "gpg", "pgp", "key", "pkr"));
-        return fc;
-    }
-
-    private JFileChooser createSecretFileChooser() {
-        JFileChooser fc = new JFileChooser();
-        fc.addChoosableFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                "Tutti i file (*.*)", "*"));
-        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                "PGP Secret Key files (*.asc, *.gpg, *.pgp, *.key, *.skr)",
-                "asc", "gpg", "pgp", "key", "skr"));
-        return fc;
-    }
 
     public void savePreferences(java.util.prefs.Preferences prefs) {
         prefs.put("recv_pub_paths", String.join(File.pathSeparator, publicKeyringPaths));
@@ -978,7 +912,7 @@ public class ReceivePanel extends JPanel {
                         loadPublicKeyringAdd(f);
                     }
                 } else {
-                    System.err.println("File non trovato: " + path);
+                    System.err.println("File not found: " + path);
                 }
             }
         }
@@ -994,7 +928,7 @@ public class ReceivePanel extends JPanel {
                         loadPrivateKeyringAdd(f);
                     }
                 } else {
-                    System.err.println("File non trovato: " + path);
+                    System.err.println("File not found: " + path);
                 }
             }
         }

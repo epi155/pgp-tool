@@ -45,7 +45,7 @@ public class KeyTabPanel extends JPanel {
         c.anchor = GridBagConstraints.WEST;
 
         c.gridx = 0; c.gridy = 0; c.gridwidth = 2;
-        configPanel.add(new JLabel("User ID (es. Mario Rossi <mario@example.com>):"), c);
+        configPanel.add(new JLabel("User ID (e.g. Alice Smith <alice@example.com>):"), c);
 
         c.gridy = 1;
         userIdField = new JTextField(40);
@@ -55,22 +55,22 @@ public class KeyTabPanel extends JPanel {
         configPanel.add(Box.createVerticalStrut(10), c);
 
         c.gridy = 3; c.gridwidth = 1;
-        TitledBorder masterBorder = BorderFactory.createTitledBorder("Chiave principale");
+        TitledBorder masterBorder = BorderFactory.createTitledBorder("Master Key");
         JPanel masterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
         masterPanel.setBorder(masterBorder);
 
         masterAlgoCombo = new JComboBox<>(new String[]{"RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1", "Ed25519", "Ed448"});
         masterAlgoCombo.addActionListener(e -> updateMasterCheckboxes());
-        masterPanel.add(new JLabel("Tipo:"));
+        masterPanel.add(new JLabel("Type:"));
         masterPanel.add(masterAlgoCombo);
 
         masterExpCombo = new JComboBox<>(expirationOptions());
-        masterPanel.add(new JLabel("Scadenza:"));
+        masterPanel.add(new JLabel("Expiry:"));
         masterPanel.add(masterExpCombo);
 
-        masterCertifyCb = new JCheckBox("Certifica", true);
-        masterSignCb = new JCheckBox("Firma", true);
-        masterEncryptCb = new JCheckBox("Cifra", false);
+        masterCertifyCb = new JCheckBox("Certify", true);
+        masterSignCb = new JCheckBox("Sign", true);
+        masterEncryptCb = new JCheckBox("Encrypt", false);
         masterPanel.add(masterCertifyCb);
         masterPanel.add(masterSignCb);
         masterPanel.add(masterEncryptCb);
@@ -80,9 +80,9 @@ public class KeyTabPanel extends JPanel {
         c.gridy = 4;
         subKeysPanel = new JPanel();
         subKeysPanel.setLayout(new BoxLayout(subKeysPanel, BoxLayout.Y_AXIS));
-        subKeysPanel.setBorder(BorderFactory.createTitledBorder("Sottochiavi"));
+        subKeysPanel.setBorder(BorderFactory.createTitledBorder("Subkeys"));
 
-        JButton addSubBtn = new JButton("+ Aggiungi sottochiave");
+        JButton addSubBtn = new JButton("+ Add Subkey");
         addSubBtn.addActionListener(e -> addSubKeyRow());
 
         JPanel subKeysWrapper = new JPanel(new BorderLayout());
@@ -91,7 +91,7 @@ public class KeyTabPanel extends JPanel {
         configPanel.add(subKeysWrapper, c);
 
         c.gridy = 5; c.gridwidth = 1;
-        generateBtn = new JButton("Genera");
+        generateBtn = new JButton("Generate");
         generateBtn.addActionListener(e -> onGenerate());
 
         JPanel generatePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
@@ -105,7 +105,7 @@ public class KeyTabPanel extends JPanel {
         scrollConfig.add(configPanel, BorderLayout.NORTH);
 
         JPanel resultPanel = new JPanel(new BorderLayout(5, 5));
-        resultPanel.setBorder(BorderFactory.createTitledBorder("Chiave generata"));
+        resultPanel.setBorder(BorderFactory.createTitledBorder("Generated Key"));
 
         treePanel = new KeyTreePanel("", false, false);
         treePanel.setLoadButtonVisible(false);
@@ -115,10 +115,10 @@ public class KeyTabPanel extends JPanel {
         resultPanel.add(treePanel, BorderLayout.CENTER);
 
         JPanel savePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
-        savePubBtn = new JButton("Salva chiave pubblica");
+        savePubBtn = new JButton("Save Public Key");
         savePubBtn.setEnabled(false);
         savePubBtn.addActionListener(e -> onSavePublic());
-        savePrivBtn = new JButton("Salva chiave privata");
+        savePrivBtn = new JButton("Save Private Key");
         savePrivBtn.setEnabled(false);
         savePrivBtn.addActionListener(e -> onSavePrivate());
         savePanel.add(savePubBtn);
@@ -144,8 +144,8 @@ public class KeyTabPanel extends JPanel {
     private void onGenerate() {
         String userId = userIdField.getText().trim();
         if (userId.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Inserisci un User ID.",
-                    "Errore", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Enter a User ID.",
+                    "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
@@ -156,15 +156,15 @@ public class KeyTabPanel extends JPanel {
 
         KeyConfig.KeySpec master = config.getMasterKey();
         if (!master.isCanCertify() && !master.isCanSign() && !master.isCanEncrypt()) {
-            JOptionPane.showMessageDialog(this, "Nessuna operazione selezionata per la chiave principale.\nSeleziona almeno Certifica, Firma o Cifra.",
-                    "Errore", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "No operations selected for the master key.\nSelect at least Certify, Sign or Encrypt.",
+                    "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
         for (int i = 0; i < config.getSubKeys().size(); i++) {
             KeyConfig.KeySpec sub = config.getSubKeys().get(i);
             if (!sub.isCanSign() && !sub.isCanEncrypt()) {
-                JOptionPane.showMessageDialog(this, "Sottochiave " + (i + 1) + " senza alcuna operazione.\nSeleziona almeno Firma o Cifra.",
-                        "Errore", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Subkey " + (i + 1) + " has no operations.\nSelect at least Sign or Encrypt.",
+                        "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
         }
@@ -176,12 +176,12 @@ public class KeyTabPanel extends JPanel {
             treePanel.expandAllNodes();
             savePubBtn.setEnabled(true);
             savePrivBtn.setEnabled(true);
-            JOptionPane.showMessageDialog(this, "Chiave generata con successo.",
+            JOptionPane.showMessageDialog(this, "Key generated successfully.",
                     "OK", JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception ex) {
             ex.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Errore durante la generazione:\n" + ex.getMessage(),
-                    "Errore", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Error during generation:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -224,7 +224,7 @@ public class KeyTabPanel extends JPanel {
             name = raw.substring(at + 1, close).trim();
         }
         name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
-        if (name.isEmpty()) name = "chiave";
+        if (name.isEmpty()) name = "key";
         return name + extension;
     }
 
@@ -250,18 +250,18 @@ public class KeyTabPanel extends JPanel {
     }
 
     private static String[] expirationOptions() {
-        return new String[]{"Mai", "1 mese", "3 mesi", "6 mesi", "1 anno", "2 anni", "5 anni", "10 anni"};
+        return new String[]{"Never", "1 month", "3 months", "6 months", "1 year", "2 years", "5 years", "10 years"};
     }
 
     private static long parseExpiration(String text) {
         switch (text) {
-            case "1 mese": return 30L * 86400;
-            case "3 mesi": return 90L * 86400;
-            case "6 mesi": return 180L * 86400;
-            case "1 anno": return 365L * 86400;
-            case "2 anni": return 2L * 365 * 86400;
-            case "5 anni": return 5L * 365 * 86400;
-            case "10 anni": return 10L * 365 * 86400;
+            case "1 month": return 30L * 86400;
+            case "3 months": return 90L * 86400;
+            case "6 months": return 180L * 86400;
+            case "1 year": return 365L * 86400;
+            case "2 years": return 2L * 365 * 86400;
+            case "5 years": return 5L * 365 * 86400;
+            case "10 years": return 10L * 365 * 86400;
             default: return 0;
         }
     }
@@ -305,12 +305,12 @@ public class KeyTabPanel extends JPanel {
             try (ArmoredOutputStream out = new ArmoredOutputStream(new FileOutputStream(file))) {
                 PGPPublicKeyRing pubRing = generatedKey.getPublicKeyRing();
                 pubRing.encode(out);
-                JOptionPane.showMessageDialog(this, "Chiave pubblica salvata:\n" + file.getAbsolutePath(),
+                JOptionPane.showMessageDialog(this, "Public key saved:\n" + file.getAbsolutePath(),
                         "OK", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) {
                 ex.printStackTrace();
-                JOptionPane.showMessageDialog(this, "Errore durante il salvataggio:\n" + ex.getMessage(),
-                        "Errore", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Error during save:\n" + ex.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
@@ -320,9 +320,9 @@ public class KeyTabPanel extends JPanel {
 
         PasswordDialog pwdDlg = new PasswordDialog(
                 (Frame) SwingUtilities.getWindowAncestor(this),
-                "chiave privata generata",
+                "generated private key",
                 PasswordDialog.Mode.CREATE,
-                "Crea password per la chiave privata");
+                "Create password for private key");
         pwdDlg.setVisible(true);
         if (pwdDlg.getPassword() == null) return;
 
@@ -331,8 +331,8 @@ public class KeyTabPanel extends JPanel {
             try {
                 secRing = KeyGeneratorService.reEncrypt(generatedKey.getSecretKeyRing(), pwdDlg.getPassword());
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Errore durante la cifratura della chiave:\n" + ex.getMessage(),
-                        "Errore", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Error during key encryption:\n" + ex.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
         } else {
@@ -347,13 +347,13 @@ public class KeyTabPanel extends JPanel {
                 try (ArmoredOutputStream out = new ArmoredOutputStream(new FileOutputStream(file))) {
                     secRing.encode(out);
                 }
-                JOptionPane.showMessageDialog(this, "Chiave privata salvata:\n" + file.getAbsolutePath(),
+                JOptionPane.showMessageDialog(this, "Private key saved:\n" + file.getAbsolutePath(),
                         "OK", JOptionPane.INFORMATION_MESSAGE);
             }
         } catch (Exception ex) {
             ex.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Errore durante il salvataggio:\n" + ex.getMessage(),
-                    "Errore", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Error during save:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -371,8 +371,8 @@ public class KeyTabPanel extends JPanel {
             panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
             algoCombo = new JComboBox<>(new String[]{"RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1", "Ed25519", "Ed448", "X25519", "X448"});
             expCombo = new JComboBox<>(expirationOptions());
-            signCb = new JCheckBox("Firma", true);
-            encryptCb = new JCheckBox("Cifra", true);
+            signCb = new JCheckBox("Sign", true);
+            encryptCb = new JCheckBox("Encrypt", true);
             java.awt.event.ItemListener checkboxSaver = e -> {
                 if (syncing) return;
                 if (e.getStateChange() == java.awt.event.ItemEvent.SELECTED
@@ -387,16 +387,16 @@ public class KeyTabPanel extends JPanel {
             signCb.addItemListener(checkboxSaver);
             encryptCb.addItemListener(checkboxSaver);
             algoCombo.addActionListener(e -> updateSubkeyCheckboxes(this));
-            JButton removeBtn = new JButton("X Rimuovi");
+            JButton removeBtn = new JButton("X Remove");
             removeBtn.addActionListener(e -> {
                 subKeyRows.remove(this);
                 subKeysPanel.remove(panel);
                 subKeysPanel.revalidate();
                 subKeysPanel.repaint();
             });
-            panel.add(new JLabel("Tipo:"));
+            panel.add(new JLabel("Type:"));
             panel.add(algoCombo);
-            panel.add(new JLabel("Scadenza:"));
+            panel.add(new JLabel("Expiry:"));
             panel.add(expCombo);
             panel.add(signCb);
             panel.add(encryptCb);

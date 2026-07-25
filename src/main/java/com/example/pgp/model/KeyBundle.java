@@ -13,5 +13,4 @@ public class KeyBundle {
 
     public List<PGPKeyInfo> getKeys() { return keys; }
     public String getSourceFile() { return sourceFile; }
-    public boolean isEmpty() { return keys == null || keys.isEmpty(); }
 }
