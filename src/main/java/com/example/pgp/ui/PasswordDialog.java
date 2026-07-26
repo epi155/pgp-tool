@@ -39,8 +39,13 @@ public class PasswordDialog extends JDialog {
         content.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
         if (uidText != null) {
+            String escaped = uidText
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace("\n", "<br>");
             String html = "<html><div style='width:400px; font-size:9px; color:gray'>"
-                    + uidText.replace("\n", "<br>")
+                    + escaped
                     + "</div></html>";
             JLabel uidLabel = new JLabel(html);
             JPanel uidPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));

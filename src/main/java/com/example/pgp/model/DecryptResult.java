@@ -1,11 +1,42 @@
 package com.example.pgp.model;
 
+import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
+
 import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
 public class DecryptResult {
+
+    public static class EncryptionLayer {
+        public enum Type { PUBLIC_KEY, PASSWORD }
+
+        private final Type type;
+        private final int encryptionAlgorithm;
+        private final int publicKeyAlgorithm;
+        private final Long recipientKeyId;
+        private final List<Long> allRecipientKeyIds;
+        private final String recipientUserId;
+
+        public EncryptionLayer(Type type, int encryptionAlgorithm, int publicKeyAlgorithm,
+                               Long recipientKeyId, List<Long> allRecipientKeyIds,
+                               String recipientUserId) {
+            this.type = type;
+            this.encryptionAlgorithm = encryptionAlgorithm;
+            this.publicKeyAlgorithm = publicKeyAlgorithm;
+            this.recipientKeyId = recipientKeyId;
+            this.allRecipientKeyIds = allRecipientKeyIds;
+            this.recipientUserId = recipientUserId;
+        }
+
+        public Type getType() { return type; }
+        public int getEncryptionAlgorithm() { return encryptionAlgorithm; }
+        public int getPublicKeyAlgorithm() { return publicKeyAlgorithm; }
+        public Long getRecipientKeyId() { return recipientKeyId; }
+        public List<Long> getAllRecipientKeyIds() { return allRecipientKeyIds; }
+        public String getRecipientUserId() { return recipientUserId; }
+    }
 
     public enum VerificationStatus {
         NOT_SIGNED,
@@ -19,14 +50,16 @@ public class DecryptResult {
         private final VerificationStatus status;
         private final String userId;
         private final int hashAlgorithm;
+        private final int publicKeyAlgorithm;
         private final Date signatureTime;
 
         public SignerInfo(long keyId, VerificationStatus status, String userId,
-                          int hashAlgorithm, Date signatureTime) {
+                          int hashAlgorithm, int publicKeyAlgorithm, Date signatureTime) {
             this.keyId = keyId;
             this.status = status;
             this.userId = userId;
             this.hashAlgorithm = hashAlgorithm;
+            this.publicKeyAlgorithm = publicKeyAlgorithm;
             this.signatureTime = signatureTime;
         }
 
@@ -34,6 +67,7 @@ public class DecryptResult {
         public VerificationStatus getStatus() { return status; }
         public String getUserId() { return userId; }
         public int getHashAlgorithm() { return hashAlgorithm; }
+        public int getPublicKeyAlgorithm() { return publicKeyAlgorithm; }
         public Date getSignatureTime() { return signatureTime; }
 
         public String getHashAlgorithmName() {
@@ -121,43 +155,67 @@ public class DecryptResult {
     }
 
     public String getVerificationDetail() {
-        if (signers.isEmpty()) {
-            return "\u2013 Unsigned message";
-        }
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < signers.size(); i++) {
-            SignerInfo s = signers.get(i);
-            if (i > 0) sb.append('\n');
-            switch (s.getStatus()) {
-                case SIGNED_VERIFIED:
-                    sb.append(String.format("\u2713 Valid signature from 0x%08X", s.getKeyId()));
-                    break;
-                case SIGNED_KEY_NOT_FOUND:
-                    sb.append(String.format("\u26A0 Signed message but key 0x%08X not found", s.getKeyId()));
-                    break;
-                case SIGNED_INVALID:
-                    sb.append(String.format("\u26A0 Invalid signature (0x%08X)", s.getKeyId()));
-                    break;
-                default:
-                    break;
-            }
-            sb.append(" (Hash: ").append(s.getHashAlgorithmName()).append(')');
-            sb.append('\n');
-            if (s.getSignatureTime() != null) {
-                sb.append("Signature Date: ").append(sdf.format(s.getSignatureTime())).append('\n');
-            }
-            if (s.getUserId() != null) {
-                sb.append("Signer: ").append(s.getUserId()).append('\n');
+        sb.append("<html><body style=\"font-family:SansSerif;font-size:8px\">");
+        if (signers.isEmpty()) {
+            sb.append("<span style=\"color:gray\">\u2013 Unsigned message</span>");
+        } else {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            for (int i = 0; i < signers.size(); i++) {
+                SignerInfo s = signers.get(i);
+                if (i > 0) sb.append("<br><br>");
+                switch (s.getStatus()) {
+                    case SIGNED_VERIFIED:
+                        sb.append(String.format(
+                                "<span style=\"color:green;font-weight:bold\">\u2713 Valid signature from 0x%08X</span>",
+                                s.getKeyId()));
+                        break;
+                    case SIGNED_KEY_NOT_FOUND:
+                        sb.append(String.format(
+                                "<span style=\"color:#CC8800;font-weight:bold\">\u26A0 Signed message but key 0x%08X not found</span>",
+                                s.getKeyId()));
+                        break;
+                    case SIGNED_INVALID:
+                        sb.append(String.format(
+                                "<span style=\"color:red;font-weight:bold\">\u26A0 Invalid signature (0x%08X)</span>",
+                                s.getKeyId()));
+                        break;
+                    default:
+                        break;
+                }
+                if (s.getHashAlgorithm() != 0) {
+                    sb.append("<br><span style=\"font-weight:bold\">Hash:</span> ");
+                    if (s.getPublicKeyAlgorithm() != 0) {
+                        sb.append(Metadata.pubKeyAlgName(s.getPublicKeyAlgorithm())).append('/');
+                    }
+                    sb.append(s.getHashAlgorithmName());
+                }
+                if (s.getSignatureTime() != null) {
+                    if (s.getHashAlgorithm() != 0) {
+                        sb.append(" \u00A0 ");
+                    } else {
+                        sb.append("<br>");
+                    }
+                    sb.append("<span style=\"font-weight:bold\">Signature Date:</span> ").append(sdf.format(s.getSignatureTime()));
+                }
+                if (s.getUserId() != null) {
+                    sb.append("<br><span style=\"font-weight:bold\">Signer:</span> ").append(escapeHtml(s.getUserId()));
+                }
             }
         }
-        return sb.toString().stripTrailing();
+        sb.append("</body></html>");
+        return sb.toString();
+    }
+
+    private static String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     public static class Metadata {
         private final Long recipientKeyId;
         private final List<Long> allRecipientKeyIds;
         private final Integer encryptionAlgorithm;
+        private final Integer publicKeyAlgorithm;
         private final Integer compressionAlgorithm;
         private final Character literalFormat;
         private final String fileName;
@@ -167,11 +225,13 @@ public class DecryptResult {
         private final Date signatureCreationTime;
         private final String signerUserId;
         private final String recipientUserId;
+        private final List<EncryptionLayer> encryptionLayers;
 
         private Metadata(Builder b) {
             this.recipientKeyId = b.recipientKeyId;
             this.allRecipientKeyIds = b.allRecipientKeyIds;
             this.encryptionAlgorithm = b.encryptionAlgorithm;
+            this.publicKeyAlgorithm = b.publicKeyAlgorithm;
             this.compressionAlgorithm = b.compressionAlgorithm;
             this.literalFormat = b.literalFormat;
             this.fileName = b.fileName;
@@ -181,12 +241,14 @@ public class DecryptResult {
             this.signatureCreationTime = b.signatureCreationTime;
             this.signerUserId = b.signerUserId;
             this.recipientUserId = b.recipientUserId;
+            this.encryptionLayers = b.encryptionLayers;
         }
 
         public Long getRecipientKeyId() { return recipientKeyId; }
         public List<Long> getAllRecipientKeyIds() { return allRecipientKeyIds; }
         public Long getSignerKeyId() { return signerKeyId; }
         public String getRecipientUserId() { return recipientUserId; }
+        public List<EncryptionLayer> getEncryptionLayers() { return encryptionLayers; }
         public String getOriginalFileName() {
             if (fileName != null && !fileName.isEmpty() && !"_CONSOLE".equals(fileName))
                 return fileName;
@@ -197,24 +259,50 @@ public class DecryptResult {
             StringBuilder sb = new StringBuilder();
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
-            if (allRecipientKeyIds != null && !allRecipientKeyIds.isEmpty()) {
-                sb.append("Recipient Key IDs:");
-                for (long id : allRecipientKeyIds) {
-                    sb.append(" 0x").append(String.format("%08X", id));
-                    if (recipientKeyId != null && id == recipientKeyId)
-                        sb.append('*');
+            if (encryptionLayers != null && !encryptionLayers.isEmpty()) {
+                for (int i = 0; i < encryptionLayers.size(); i++) {
+                    EncryptionLayer layer = encryptionLayers.get(i);
+                    sb.append("Layer ").append(i + 1).append(": ");
+                    if (layer.getType() == EncryptionLayer.Type.PASSWORD) {
+                        sb.append("Password-based");
+                    } else {
+                        if (layer.getPublicKeyAlgorithm() != 0) {
+                            sb.append(pubKeyAlgName(layer.getPublicKeyAlgorithm())).append('/');
+                        }
+                        sb.append(algName(layer.getEncryptionAlgorithm()));
+                        if (layer.getAllRecipientKeyIds() != null && !layer.getAllRecipientKeyIds().isEmpty()) {
+                            sb.append(" (keys:");
+                            for (long id : layer.getAllRecipientKeyIds()) {
+                                sb.append(" 0x").append(String.format("%08X", id));
+                            }
+                            sb.append(')');
+                        }
+                    }
+                    sb.append('\n');
                 }
-                sb.append('\n');
+            } else {
+                if (allRecipientKeyIds != null && !allRecipientKeyIds.isEmpty()) {
+                    sb.append("Recipient Key IDs:");
+                    for (long id : allRecipientKeyIds) {
+                        sb.append(" 0x").append(String.format("%08X", id));
+                        if (recipientKeyId != null && id == recipientKeyId)
+                            sb.append('*');
+                    }
+                    sb.append('\n');
+                }
+                if (recipientUserId != null)
+                    sb.append("User: ").append(recipientUserId).append('\n');
+                if (encryptionAlgorithm != null) {
+                    sb.append("Encryption: ");
+                    if (publicKeyAlgorithm != null && publicKeyAlgorithm != 0) {
+                        sb.append(pubKeyAlgName(publicKeyAlgorithm)).append('/');
+                    }
+                    sb.append(algName(encryptionAlgorithm)).append('\n');
+                }
             }
-            if (recipientUserId != null)
-                sb.append("User: ").append(recipientUserId).append('\n');
-            if (encryptionAlgorithm != null || compressionAlgorithm != null) {
-                sb.append("Encryption/Compression: ");
-                if (encryptionAlgorithm != null)
-                    sb.append(algName(encryptionAlgorithm));
-                if (compressionAlgorithm != null)
-                    sb.append(" / ").append(compName(compressionAlgorithm));
-                sb.append('\n');
+
+            if (compressionAlgorithm != null) {
+                sb.append("Compression: ").append(compName(compressionAlgorithm)).append('\n');
             }
             if (literalFormat != null) {
                 sb.append("Format: ").append(formatName(literalFormat));
@@ -237,41 +325,85 @@ public class DecryptResult {
         }
 
         public String formatEncryption() {
-            if (allRecipientKeyIds == null && encryptionAlgorithm == null
-                    && compressionAlgorithm == null && literalFormat == null
-                    && modificationTime == null) {
-                return "";
-            }
             StringBuilder sb = new StringBuilder();
+            sb.append("<html><body style=\"font-family:SansSerif;font-size:8px\">");
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            if (allRecipientKeyIds != null && !allRecipientKeyIds.isEmpty()) {
-                sb.append("Recipient Key IDs:");
-                for (long id : allRecipientKeyIds) {
-                    sb.append(" 0x").append(String.format("%08X", id));
-                    if (recipientKeyId != null && id == recipientKeyId)
-                        sb.append('*');
+
+            if (encryptionLayers != null && !encryptionLayers.isEmpty()) {
+                for (int i = 0; i < encryptionLayers.size(); i++) {
+                    EncryptionLayer layer = encryptionLayers.get(i);
+                    sb.append("<b>Layer ").append(i + 1).append(":</b> ");
+                    if (layer.getType() == EncryptionLayer.Type.PASSWORD) {
+                        sb.append("Password-based");
+                    } else {
+                        if (layer.getPublicKeyAlgorithm() != 0) {
+                            sb.append(pubKeyAlgName(layer.getPublicKeyAlgorithm())).append('/');
+                        }
+                        sb.append(algName(layer.getEncryptionAlgorithm()));
+                        if (layer.getRecipientUserId() != null) {
+                            sb.append(" for ").append(escapeHtml(layer.getRecipientUserId()));
+                        }
+                        if (layer.getAllRecipientKeyIds() != null && !layer.getAllRecipientKeyIds().isEmpty()) {
+                            sb.append(" (keys:");
+                            for (long id : layer.getAllRecipientKeyIds()) {
+                                sb.append(' ');
+                                if (layer.getRecipientKeyId() != null && id == layer.getRecipientKeyId()) {
+                                    sb.append("<b>0x").append(String.format("%08X", id)).append("</b>");
+                                } else {
+                                    sb.append("0x").append(String.format("%08X", id));
+                                }
+                            }
+                            sb.append(')');
+                        }
+                    }
+                    sb.append("<br>");
                 }
-                sb.append('\n');
+            } else {
+                if (allRecipientKeyIds != null && !allRecipientKeyIds.isEmpty()) {
+                    sb.append("<b>Recipient Key IDs:</b>");
+                    for (long id : allRecipientKeyIds) {
+                        sb.append(' ');
+                        if (recipientKeyId != null && id == recipientKeyId) {
+                            sb.append("<b>0x").append(String.format("%08X", id)).append("</b>");
+                        } else {
+                            sb.append("0x").append(String.format("%08X", id));
+                        }
+                    }
+                    sb.append("<br>");
+                }
+                if (recipientUserId != null) {
+                    sb.append("<b>User:</b> ").append(recipientUserId).append("<br>");
+                }
+                if (encryptionAlgorithm != null) {
+                    sb.append("<b>Encryption:</b> ");
+                    if (publicKeyAlgorithm != null && publicKeyAlgorithm != 0) {
+                        sb.append(pubKeyAlgName(publicKeyAlgorithm)).append('/');
+                    }
+                    sb.append(algName(encryptionAlgorithm)).append("<br>");
+                }
             }
-            if (recipientUserId != null)
-                sb.append("User: ").append(recipientUserId).append('\n');
-            if (encryptionAlgorithm != null || compressionAlgorithm != null) {
-                sb.append("Encryption/Compression: ");
-                if (encryptionAlgorithm != null)
-                    sb.append(algName(encryptionAlgorithm));
-                if (compressionAlgorithm != null)
-                    sb.append(" / ").append(compName(compressionAlgorithm));
-                sb.append('\n');
+
+            {
+                StringBuilder line = new StringBuilder();
+                if (compressionAlgorithm != null) {
+                    line.append("<b>Compression:</b> ").append(compName(compressionAlgorithm));
+                }
+                if (modificationTime != null) {
+                    if (line.length() > 0) line.append(" \u00A0 ");
+                    line.append("<b>Timestamp:</b> ").append(sdf.format(modificationTime));
+                }
+                if (line.length() > 0) {
+                    sb.append(line).append("<br>");
+                }
             }
             if (literalFormat != null) {
-                sb.append("Format: ").append(formatName(literalFormat));
+                sb.append("<b>Format:</b> ").append(formatName(literalFormat));
                 if (fileName != null && !fileName.isEmpty() && !"_CONSOLE".equals(fileName))
                     sb.append(" (").append(fileName).append(')');
-                sb.append('\n');
+                sb.append("<br>");
             }
-            if (modificationTime != null)
-                sb.append("Timestamp: ").append(sdf.format(modificationTime)).append('\n');
-            return sb.toString().stripTrailing();
+            sb.append("</body></html>");
+            return sb.toString();
         }
 
         public String getHashAlgorithmName() {
@@ -282,6 +414,7 @@ public class DecryptResult {
             private Long recipientKeyId;
             private List<Long> allRecipientKeyIds;
             private Integer encryptionAlgorithm;
+            private Integer publicKeyAlgorithm;
             private Integer compressionAlgorithm;
             private Character literalFormat;
             private String fileName;
@@ -291,10 +424,12 @@ public class DecryptResult {
             private Date signatureCreationTime;
             private String signerUserId;
             private String recipientUserId;
+            private List<EncryptionLayer> encryptionLayers;
 
             public Builder recipientKeyId(long v) { this.recipientKeyId = v; return this; }
             public Builder allRecipientKeyIds(List<Long> v) { this.allRecipientKeyIds = v; return this; }
             public Builder encryptionAlgorithm(int v) { this.encryptionAlgorithm = v; return this; }
+            public Builder publicKeyAlgorithm(int v) { this.publicKeyAlgorithm = v; return this; }
             public Builder compressionAlgorithm(int v) { this.compressionAlgorithm = v; return this; }
             public Builder literalFormat(char v) { this.literalFormat = v; return this; }
             public Builder fileName(String v) { this.fileName = v; return this; }
@@ -304,6 +439,8 @@ public class DecryptResult {
             public Builder signatureCreationTime(Date v) { this.signatureCreationTime = v; return this; }
             public Builder signerUserId(String v) { this.signerUserId = v; return this; }
             public Builder recipientUserId(String v) { this.recipientUserId = v; return this; }
+            public Builder encryptionLayers(List<EncryptionLayer> v) { this.encryptionLayers = v; return this; }
+            public Integer getEncryptionAlgorithm() { return encryptionAlgorithm; }
             public Metadata build() { return new Metadata(this); }
         }
 
@@ -333,6 +470,38 @@ public class DecryptResult {
                 case 9: return "AES-256";
                 case 10: return "Twofish";
                 default: return "Algo#" + algo;
+            }
+        }
+
+        private static String pubKeyAlgName(int algo) {
+            switch (algo) {
+                case PublicKeyAlgorithmTags.RSA_GENERAL:
+                case PublicKeyAlgorithmTags.RSA_ENCRYPT:
+                case PublicKeyAlgorithmTags.RSA_SIGN:
+                    return "RSA";
+                case PublicKeyAlgorithmTags.DSA:
+                    return "DSA";
+                case PublicKeyAlgorithmTags.ECDSA:
+                    return "ECDSA";
+                case PublicKeyAlgorithmTags.ECDH:
+                    return "ECDH";
+                case PublicKeyAlgorithmTags.ELGAMAL_ENCRYPT:
+                case PublicKeyAlgorithmTags.ELGAMAL_GENERAL:
+                    return "ElGamal";
+                case PublicKeyAlgorithmTags.DIFFIE_HELLMAN:
+                    return "DH";
+                case PublicKeyAlgorithmTags.EDDSA:
+                    return "EdDSA";
+                case PublicKeyAlgorithmTags.Ed25519:
+                    return "Ed25519";
+                case PublicKeyAlgorithmTags.Ed448:
+                    return "Ed448";
+                case PublicKeyAlgorithmTags.X25519:
+                    return "X25519";
+                case PublicKeyAlgorithmTags.X448:
+                    return "X448";
+                default:
+                    return "Algo#" + algo;
             }
         }
 

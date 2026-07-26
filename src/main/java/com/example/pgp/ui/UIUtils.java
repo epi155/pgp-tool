@@ -23,8 +23,8 @@ public final class UIUtils {
         return (double) control / len > 0.30;
     }
 
-    public static JScrollPane wrapInScroll(JTextArea ta, String title) {
-        JScrollPane sp = new JScrollPane(ta);
+    public static JScrollPane wrapInScroll(JComponent comp, String title) {
+        JScrollPane sp = new JScrollPane(comp);
         sp.setBorder(BorderFactory.createTitledBorder(title));
         return sp;
     }
@@ -83,4 +83,5 @@ public final class UIUtils {
             }
         }
     }
+
 }

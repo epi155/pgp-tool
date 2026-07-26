@@ -478,11 +478,14 @@ public class SendPanel extends JPanel {
 
     private void setupKeyDrop(KeyTreePanel panel, boolean isPublic) {
         panel.setTransferHandler(new TransferHandler() {
-            @Override public boolean canImport(TransferHandler.TransferSupport support) {
+            @Override public boolean canImport(TransferSupport support) {
                 return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
             }
-            @Override public boolean importData(TransferHandler.TransferSupport support) {
+            @Override public boolean importData(TransferSupport support) {
                 if (!canImport(support)) return false;
+                Point pt = support.getDropLocation().getDropPoint();
+                Component target = ((JComponent) support.getComponent()).findComponentAt(pt);
+                if (target == panel.getClearButton()) return false;
                 try {
                     java.util.List<File> files = (java.util.List<File>) support.getTransferable()
                             .getTransferData(DataFlavor.javaFileListFlavor);

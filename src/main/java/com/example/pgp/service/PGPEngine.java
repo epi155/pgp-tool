@@ -5,11 +5,16 @@ import com.example.pgp.model.CompoundMessage;
 import com.example.pgp.model.DecryptResult;
 import org.bouncycastle.bcpg.ArmoredInputStream;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
+import org.bouncycastle.bcpg.HashAlgorithmTags;
+import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
 import org.bouncycastle.openpgp.operator.PBEDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.PublicKeyDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.jcajce.*;
+import org.bouncycastle.openpgp.operator.bc.BcPBESecretKeyDecryptorBuilder;
+import org.bouncycastle.openpgp.operator.bc.BcPGPDigestCalculatorProvider;
+import org.bouncycastle.openpgp.operator.bc.BcPublicKeyDataDecryptorFactory;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -23,6 +28,16 @@ public class PGPEngine {
     private static final int CHUNK_SIZE = 65536;
 
     private final Map<Long, char[]> passphraseCache = new HashMap<>();
+    private PassphraseProvider passphraseProvider;
+
+    @FunctionalInterface
+    public interface PassphraseProvider {
+        char[] getPassphraseFor(long keyId);
+    }
+
+    public void setPassphraseProvider(PassphraseProvider provider) {
+        this.passphraseProvider = provider;
+    }
 
     // ─── Encrypt stream (byte[] → OutputStream) ───────────────────
 
@@ -83,6 +98,16 @@ public class PGPEngine {
         }
     }
 
+    // ─── hash algorithm override per key type ─────────────────────
+
+    private static final int SHAKE256 = 27;
+
+    private static int defaultHashForAlgo(int keyAlgorithm, int fallback) {
+        if (keyAlgorithm == PublicKeyAlgorithmTags.Ed25519) return HashAlgorithmTags.SHA512;
+        if (keyAlgorithm == PublicKeyAlgorithmTags.Ed448) return SHAKE256;
+        return fallback;
+    }
+
     // ─── writeSignAndLiteral (byte[]) ─────────────────────────────
 
     private void writeSignAndLiteral(OutputStream out, byte[] data, String fileName,
@@ -98,8 +123,9 @@ public class PGPEngine {
                 PGPPrivateKey signPrivateKey = signKeys.get(i).extractPrivateKey(
                         new JcePBESecretKeyDecryptorBuilder().setProvider("BC").build(passphrase));
                 PGPPublicKey signPubKey = signKeys.get(i).getPublicKey();
+                int effectiveHash = defaultHashForAlgo(signPubKey.getAlgorithm(), hashAlgorithm);
                 PGPSignatureGenerator sigGen = new PGPSignatureGenerator(
-                        new JcaPGPContentSignerBuilder(signPubKey.getAlgorithm(), hashAlgorithm)
+                        new JcaPGPContentSignerBuilder(signPubKey.getAlgorithm(), effectiveHash)
                                 .setProvider("BC"));
                 sigGen.init(PGPSignature.BINARY_DOCUMENT, signPrivateKey);
                 sigGen.generateOnePassVersion(false).encode(out);
@@ -202,10 +228,10 @@ public class PGPEngine {
     }
 
     public DecryptResult decryptPasswordToFile(byte[] data, char[] password, Path tempFile,
-                                                 List<PGPPublicKey> publicKeys,
-                                                 Map<Long, String> publicKeyUserIdByKeyId,
-                                                 ProgressCallback progress,
-                                                 boolean decodeText) throws Exception {
+                                                  List<PGPPublicKey> publicKeys,
+                                                  Map<Long, String> publicKeyUserIdByKeyId,
+                                                  ProgressCallback progress,
+                                                  boolean decodeText) throws Exception {
         try (InputStream in = openInput(data, progress)) {
             JcaPGPObjectFactory pgpFact = new JcaPGPObjectFactory(in);
             PGPEncryptedDataList encList = (PGPEncryptedDataList) pgpFact.nextObject();
@@ -226,18 +252,103 @@ public class PGPEngine {
 
             DecryptResult.Metadata.Builder metaBuilder = new DecryptResult.Metadata.Builder()
                     .encryptionAlgorithm(encData.getSymmetricAlgorithm(pbeFactory));
-            return parseDecryptedStreamToFile(clearStream, metaBuilder, tempFile, publicKeys, publicKeyUserIdByKeyId, decodeText);
+            return parseDecryptedStreamToFile(clearStream, new ArrayList<>(), metaBuilder, tempFile,
+                    null, publicKeys, publicKeyUserIdByKeyId, null, null, decodeText);
         }
     }
 
     public DecryptResult decryptCompressToFile(byte[] data, Path tempFile,
-                                                 List<PGPPublicKey> publicKeys,
-                                                 Map<Long, String> publicKeyUserIdByKeyId,
-                                                 ProgressCallback progress,
-                                                 boolean decodeText) throws Exception {
+                                                  List<PGPPublicKey> publicKeys,
+                                                  Map<Long, String> publicKeyUserIdByKeyId,
+                                                  ProgressCallback progress,
+                                                  boolean decodeText) throws Exception {
         try (InputStream in = openInput(data, progress)) {
             DecryptResult.Metadata.Builder metaBuilder = new DecryptResult.Metadata.Builder();
-            return parseDecryptedStreamToFile(in, metaBuilder, tempFile, publicKeys, publicKeyUserIdByKeyId, decodeText);
+            return parseDecryptedStreamToFile(in, new ArrayList<>(), metaBuilder, tempFile,
+                    null, publicKeys, publicKeyUserIdByKeyId, null, null, decodeText);
+        }
+    }
+
+    // ─── Nested decryption (unified entry point) ─────────────────
+
+    public DecryptResult decryptNested(byte[] cipherData,
+                                        List<PGPSecretKey> secretKeys,
+                                        List<PGPPublicKey> publicKeys,
+                                        Map<Long, String> publicKeyUserIdByKeyId,
+                                        Map<Long, String> secretKeyUserIds,
+                                        List<char[]> pbePasswords,
+                                        ProgressCallback progress,
+                                        boolean decodeText) throws Exception {
+        Path tempFile = Files.createTempFile("pgp-nested-decrypt-", ".bin");
+        try {
+            return decryptNestedToFile(cipherData, tempFile, secretKeys, publicKeys,
+                    publicKeyUserIdByKeyId, secretKeyUserIds, pbePasswords, progress, decodeText);
+        } catch (Exception e) {
+            Files.deleteIfExists(tempFile);
+            throw e;
+        }
+    }
+
+    public DecryptResult decryptNestedToFile(byte[] cipherData, Path tempFile,
+                                              List<PGPSecretKey> secretKeys,
+                                              List<PGPPublicKey> publicKeys,
+                                              Map<Long, String> publicKeyUserIdByKeyId,
+                                              Map<Long, String> secretKeyUserIds,
+                                              List<char[]> pbePasswords,
+                                              ProgressCallback progress,
+                                              boolean decodeText) throws Exception {
+        try (InputStream in = openInput(cipherData, progress)) {
+            List<DecryptResult.EncryptionLayer> encLayers = new ArrayList<>();
+            DecryptResult.Metadata.Builder metaBuilder = new DecryptResult.Metadata.Builder();
+            return parseDecryptedStreamToFile(in, encLayers, metaBuilder, tempFile,
+                    secretKeys, publicKeys, publicKeyUserIdByKeyId, secretKeyUserIds,
+                    pbePasswords, decodeText);
+        }
+    }
+
+    // ─── PBE layer counting ──────────────────────────────────────
+
+    public int countPBELayers(byte[] cipherData) throws Exception {
+        int[] count = new int[1];
+        countPBELayersRecursive(cipherData, count);
+        return count[0];
+    }
+
+    private void countPBELayersRecursive(byte[] data, int[] count) throws Exception {
+        try (InputStream in = openInput(data)) {
+            JcaPGPObjectFactory factory = new JcaPGPObjectFactory(in);
+            Object o = factory.nextObject();
+            if (o instanceof PGPEncryptedDataList) {
+                PGPEncryptedDataList encList = (PGPEncryptedDataList) o;
+                for (Iterator<PGPEncryptedData> it = encList.getEncryptedDataObjects(); it.hasNext();) {
+                    if (it.next() instanceof PGPPBEEncryptedData) {
+                        count[0]++;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    public Set<Long> getAllRecipientKeyIdsRecursive(byte[] cipherData) throws Exception {
+        Set<Long> allIds = new HashSet<>();
+        collectRecipientKeyIds(cipherData, allIds);
+        return allIds;
+    }
+
+    private void collectRecipientKeyIds(byte[] data, Set<Long> allIds) throws Exception {
+        try (InputStream in = openInput(data)) {
+            JcaPGPObjectFactory factory = new JcaPGPObjectFactory(in);
+            Object o = factory.nextObject();
+            if (o instanceof PGPEncryptedDataList) {
+                PGPEncryptedDataList encList = (PGPEncryptedDataList) o;
+                for (Iterator<PGPEncryptedData> it = encList.getEncryptedDataObjects(); it.hasNext();) {
+                    PGPEncryptedData ed = it.next();
+                    if (ed instanceof PGPPublicKeyEncryptedData) {
+                        allIds.add(((PGPPublicKeyEncryptedData) ed).getKeyID());
+                    }
+                }
+            }
         }
     }
 
@@ -397,8 +508,7 @@ public class PGPEngine {
         PGPPrivateKey privateKey = secKey.extractPrivateKey(
                 new JcePBESecretKeyDecryptorBuilder().setProvider("BC").build(passphrase));
 
-        PublicKeyDataDecryptorFactory decryptorFactory = new JcePublicKeyDataDecryptorFactoryBuilder()
-                .setProvider("BC").build(privateKey);
+        PublicKeyDataDecryptorFactory decryptorFactory = new BcPublicKeyDataDecryptorFactory(privateKey);
 
         DecryptResult.Metadata.Builder metaBuilder = new DecryptResult.Metadata.Builder()
                 .recipientKeyId(encData.getKeyID())
@@ -408,37 +518,154 @@ public class PGPEngine {
 
         InputStream clearStream = encData.getDataStream(decryptorFactory);
 
-        return parseDecryptedStreamToFile(clearStream, metaBuilder, tempFile, publicKeys, publicKeyUserIdByKeyId, decodeText);
+        return parseDecryptedStreamToFile(clearStream, new ArrayList<>(), metaBuilder, tempFile,
+                secretKeys, publicKeys, publicKeyUserIdByKeyId, secretKeyUserIds, null, decodeText);
     }
 
-    // ─── parseDecryptedStream → temp file ────────────────────────
+    // ─── parseDecryptedStream → temp file (recursive) ────────────
 
     private DecryptResult parseDecryptedStreamToFile(InputStream clearStream,
+                                                       List<DecryptResult.EncryptionLayer> encLayers,
                                                        DecryptResult.Metadata.Builder metaBuilder,
                                                        Path tempFile,
+                                                       List<PGPSecretKey> secretKeys,
                                                        List<PGPPublicKey> publicKeys,
                                                        Map<Long, String> publicKeyUserIdByKeyId,
+                                                       Map<Long, String> secretKeyUserIds,
+                                                       List<char[]> pbePasswords,
                                                        boolean decodeText) throws Exception {
         JcaPGPObjectFactory plainFact = new JcaPGPObjectFactory(clearStream);
         Object message = plainFact.nextObject();
 
-        DecryptResult result;
+        // Nested encryption layer
+        if (message instanceof PGPEncryptedDataList) {
+            InputStream innerStream = decryptLayer((PGPEncryptedDataList) message, encLayers,
+                    secretKeys, secretKeyUserIds, pbePasswords);
+            return parseDecryptedStreamToFile(innerStream, encLayers, metaBuilder, tempFile,
+                    secretKeys, publicKeys, publicKeyUserIdByKeyId, secretKeyUserIds,
+                    pbePasswords, decodeText);
+        }
 
+        // Inner content
         if (message instanceof PGPCompressedData) {
             PGPCompressedData compData = (PGPCompressedData) message;
             metaBuilder.compressionAlgorithm(compData.getAlgorithm());
             InputStream compStream = compData.getDataStream();
             plainFact = new JcaPGPObjectFactory(compStream);
-            result = parseCompressedToFile(plainFact, metaBuilder, tempFile, publicKeys, publicKeyUserIdByKeyId, decodeText);
-        } else if (message instanceof PGPOnePassSignatureList || message instanceof PGPLiteralData) {
-            result = parseCompressedToFile(plainFact, metaBuilder, tempFile, publicKeys, publicKeyUserIdByKeyId, decodeText);
-        } else {
-            throw new PGPException("Unexpected PGP message format: " + (message != null ? message.getClass().getName() : "null"));
         }
 
-        byte[] drainBuf = new byte[8192];
-        while (clearStream.read(drainBuf) >= 0) {}
-        return result;
+        // Build final Metadata with encryption layers info
+        if (!encLayers.isEmpty()) {
+            metaBuilder.encryptionLayers(encLayers);
+            // Backward compat: populate single-layer fields from deepest public-key layer
+            for (int i = encLayers.size() - 1; i >= 0; i--) {
+                DecryptResult.EncryptionLayer layer = encLayers.get(i);
+                if (layer.getType() == DecryptResult.EncryptionLayer.Type.PUBLIC_KEY) {
+                    metaBuilder.recipientKeyId(layer.getRecipientKeyId());
+                    metaBuilder.allRecipientKeyIds(layer.getAllRecipientKeyIds());
+                    metaBuilder.encryptionAlgorithm(layer.getEncryptionAlgorithm());
+                    metaBuilder.publicKeyAlgorithm(layer.getPublicKeyAlgorithm());
+                    if (layer.getRecipientUserId() != null)
+                        metaBuilder.recipientUserId(layer.getRecipientUserId());
+                    break;
+                }
+            }
+            // If no public-key layer, use encryption algo from the last layer
+            if (metaBuilder.getEncryptionAlgorithm() == null) {
+                metaBuilder.encryptionAlgorithm(
+                    encLayers.get(encLayers.size() - 1).getEncryptionAlgorithm());
+            }
+        }
+
+        return parseCompressedToFile(plainFact, metaBuilder, tempFile,
+                publicKeys, publicKeyUserIdByKeyId, decodeText);
+    }
+
+    private InputStream decryptLayer(PGPEncryptedDataList encList,
+                                      List<DecryptResult.EncryptionLayer> encLayers,
+                                      List<PGPSecretKey> secretKeys,
+                                      Map<Long, String> secretKeyUserIds,
+                                      List<char[]> pbePasswords) throws Exception {
+        // Try PBE if passwords are available
+        if (pbePasswords != null && !pbePasswords.isEmpty()) {
+            for (Iterator<PGPEncryptedData> it = encList.getEncryptedDataObjects(); it.hasNext();) {
+                PGPEncryptedData ed = it.next();
+                if (ed instanceof PGPPBEEncryptedData) {
+                    char[] password = pbePasswords.remove(0);
+                    PBEDataDecryptorFactory pbeFactory = new JcePBEDataDecryptorFactoryBuilder()
+                            .setProvider("BC").build(password);
+                    int symAlgo = ((PGPPBEEncryptedData) ed).getSymmetricAlgorithm(pbeFactory);
+                    encLayers.add(new DecryptResult.EncryptionLayer(
+                            DecryptResult.EncryptionLayer.Type.PASSWORD, symAlgo, 0,
+                            null, null, null));
+                    return ((PGPPBEEncryptedData) ed).getDataStream(pbeFactory);
+                }
+            }
+        }
+
+        // Public-key layer
+        List<Long> allRecipientIds = new ArrayList<>();
+        for (Iterator<PGPEncryptedData> it = encList.getEncryptedDataObjects(); it.hasNext();) {
+            PGPEncryptedData ed = it.next();
+            if (ed instanceof PGPPublicKeyEncryptedData) {
+                allRecipientIds.add(((PGPPublicKeyEncryptedData) ed).getKeyID());
+            }
+        }
+
+        if (secretKeys == null || secretKeys.isEmpty()) {
+            throw new PGPException("No private keys available for an encryption layer");
+        }
+
+        boolean dialogShown = false;
+        Exception lastError = null;
+        
+        for (PGPSecretKey sk : secretKeys) {
+            for (long rid : allRecipientIds) {
+                if (sk.getKeyID() != rid) continue;
+
+                char[] passphrase = passphraseCache.get(sk.getKeyID());
+                if (passphrase == null) {
+                    try {
+                        sk.extractPrivateKey(new JcePBESecretKeyDecryptorBuilder().setProvider("BC").build(new char[0]));
+                        passphrase = new char[0];
+                    } catch (Exception ignored) {
+                        if (!dialogShown && passphraseProvider != null) {
+                            passphrase = passphraseProvider.getPassphraseFor(sk.getKeyID());
+                            if (passphrase == null) dialogShown = true;
+                        }
+                    }
+                }
+                if (passphrase == null) continue;
+
+                try {
+                    PGPPrivateKey privateKey = sk.extractPrivateKey(
+                            new JcePBESecretKeyDecryptorBuilder().setProvider("BC").build(passphrase));
+                    passphraseCache.put(sk.getKeyID(), passphrase);
+
+                    PGPPublicKeyEncryptedData encData = findEncDataById(encList, rid);
+                    PublicKeyDataDecryptorFactory decryptorFactory = new BcPublicKeyDataDecryptorFactory(privateKey);
+
+                    int symAlgo = encData.getSymmetricAlgorithm(decryptorFactory);
+                    String uid = secretKeyUserIds != null ? secretKeyUserIds.get(encData.getKeyID()) : null;
+                    encLayers.add(new DecryptResult.EncryptionLayer(
+                            DecryptResult.EncryptionLayer.Type.PUBLIC_KEY, symAlgo,
+                            sk.getPublicKey().getAlgorithm(),
+                            encData.getKeyID(), allRecipientIds, uid));
+
+                    return encData.getDataStream(decryptorFactory);
+                } catch (Exception e) {
+                    lastError = e;
+                }
+            }
+        }
+
+        if (lastError != null) throw lastError;
+        String keyIds = allRecipientIds.stream()
+                .map(id -> String.format("0x%08X", id))
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("");
+        throw new PGPException("No matching private key found.\n"
+                + "Key IDs required by the message: " + keyIds);
     }
 
     // ─── parseCompressed → temp file ─────────────────────────────
@@ -545,7 +772,7 @@ public class PGPEngine {
                 signers.add(new DecryptResult.SignerInfo(
                         signerKeyId, signerStatus,
                         userId != null ? userId : sigUserId,
-                        sigHashAlgo,
+                        sigHashAlgo, ops.getKeyAlgorithm(),
                         sigTime));
             }
 
@@ -658,8 +885,14 @@ public class PGPEngine {
             key.extractPrivateKey(new JcePBESecretKeyDecryptorBuilder().setProvider("BC").build(new char[0]));
             cachePassphrase(key.getKeyID(), new char[0]);
             return true;
-        } catch (PGPException e) {
-            return false;
+        } catch (Exception e) {
+            try {
+                key.extractPrivateKey(new BcPBESecretKeyDecryptorBuilder(new BcPGPDigestCalculatorProvider()).build(new char[0]));
+                cachePassphrase(key.getKeyID(), new char[0]);
+                return true;
+            } catch (Exception e2) {
+                return false;
+            }
         }
     }
 

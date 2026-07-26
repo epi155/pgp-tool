@@ -25,8 +25,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class ReceivePanel extends JPanel {
 
@@ -35,8 +37,8 @@ public class ReceivePanel extends JPanel {
     private final KeyTreePanel privateKeyPanel;
     private final JTextArea cipherTextArea;
     private final JTextArea plainTextArea;
-    private final JTextArea verificationArea;
-    private final JTextArea encryptionMetadataArea;
+    private final JEditorPane verificationArea;
+    private final JEditorPane encryptionMetadataArea;
     private final JButton decryptButton;
     private final JToggleButton showUsedBtn;
     private final JRadioButton messageRadio;
@@ -68,15 +70,17 @@ public class ReceivePanel extends JPanel {
         privateKeyPanel.setUserSelectionAllowed(false);
         cipherTextArea = new JTextArea(10, 40);
         plainTextArea = new JTextArea(10, 40);
-        verificationArea = new JTextArea(3, 40);
-        encryptionMetadataArea = new JTextArea(3, 40);
+        verificationArea = new JEditorPane("text/html", "");
+        encryptionMetadataArea = new JEditorPane("text/html", "");
+        Dimension minSize = new Dimension(0, 50);
+        verificationArea.setPreferredSize(minSize);
+        encryptionMetadataArea.setPreferredSize(minSize);
         decryptButton = new JButton("Decrypt");
         decryptButton.setEnabled(false);
 
         Font mono = new Font("Monospaced", Font.PLAIN, 12);
         cipherTextArea.setFont(mono);
         plainTextArea.setFont(mono);
-        encryptionMetadataArea.setFont(mono);
         cipherTextArea.setLineWrap(true);
         cipherTextArea.setWrapStyleWord(true);
         cipherTextArea.setTransferHandler(new TransferHandler() {
@@ -157,7 +161,6 @@ public class ReceivePanel extends JPanel {
         });
         plainTextArea.setEditable(false);
         verificationArea.setEditable(false);
-        verificationArea.setFont(verificationArea.getFont().deriveFont(Font.BOLD, 12f));
         verificationArea.setBackground(UIManager.getColor("Panel.background"));
         encryptionMetadataArea.setEditable(false);
         encryptionMetadataArea.setBackground(UIManager.getColor("Panel.background"));
@@ -437,11 +440,14 @@ public class ReceivePanel extends JPanel {
 
     private void setupKeyDrop(KeyTreePanel panel, boolean isPublic) {
         panel.setTransferHandler(new TransferHandler() {
-            @Override public boolean canImport(TransferHandler.TransferSupport support) {
+            @Override public boolean canImport(TransferSupport support) {
                 return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
             }
-            @Override public boolean importData(TransferHandler.TransferSupport support) {
+            @Override public boolean importData(TransferSupport support) {
                 if (!canImport(support)) return false;
+                Point pt = support.getDropLocation().getDropPoint();
+                Component target = ((JComponent) support.getComponent()).findComponentAt(pt);
+                if (target == panel.getClearButton()) return false;
                 try {
                     java.util.List<File> files = (java.util.List<File>) support.getTransferable()
                             .getTransferData(DataFlavor.javaFileListFlavor);
@@ -540,209 +546,142 @@ public class ReceivePanel extends JPanel {
         byte[] cipherData = isBinary ? cipherBytes : cipherText.getBytes(StandardCharsets.UTF_8);
         List<PGPPublicKey> publicKeys = extractPublicKeys();
         Map<Long, String> publicKeyUserIdByKeyId = buildPublicKeyUserIds();
-
-        String mode;
-        try {
-            if (engine.isPBE(cipherData)) {
-                mode = "PBE";
-            } else if (engine.isUnencrypted(cipherData)) {
-                mode = "COMPRESS";
-            } else {
-                mode = "PUBKEY";
-            }
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this,
-                    "Unable to parse the message:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        if ("PUBKEY".equals(mode)) {
-            List<PGPSecretKey> secretKeys = extractSecretKeys();
-            Map<Long, String> secretKeyUserIds = new HashMap<>();
-            if (privateKeyBundle != null) {
-                for (PGPKeyInfo info : privateKeyBundle.getKeys()) {
-                    String uid = info.getUserId();
-                    if (uid != null) {
-                        for (PGPKeyInfo sub : info.getSubKeys()) {
-                            secretKeyUserIds.put(sub.getKeyId(), uid);
-                        }
-                        secretKeyUserIds.put(info.getKeyId(), uid);
+        List<PGPSecretKey> secretKeys = extractSecretKeys();
+        Map<Long, String> secretKeyUserIds = new HashMap<>();
+        if (privateKeyBundle != null) {
+            for (PGPKeyInfo info : privateKeyBundle.getKeys()) {
+                String uid = info.getUserId();
+                if (uid != null) {
+                    for (PGPKeyInfo sub : info.getSubKeys()) {
+                        secretKeyUserIds.put(sub.getKeyId(), uid);
                     }
+                    secretKeyUserIds.put(info.getKeyId(), uid);
                 }
             }
+        }
 
+        // Pre-scan: count PBE layers
+        int pbeCount = 0;
+        try {
+            pbeCount = engine.countPBELayers(cipherData);
+        } catch (Exception ex) {
+            // ignore — treat as 0 PBE layers
+        }
+
+        // Pre-scan: collect recipient key IDs from the outermost layer
+        Set<Long> allMsgKeyIds = new HashSet<>();
+        try {
+            allMsgKeyIds = engine.getAllRecipientKeyIdsRecursive(cipherData);
+        } catch (Exception ex) {
+            // ignore — treat as no recipient keys
+        }
+
+        // Collect PBE passwords upfront
+        List<char[]> pbePasswords = new ArrayList<>();
+        for (int i = 0; i < pbeCount; i++) {
+            String title = (pbeCount > 1)
+                    ? "Enter encryption password (" + (i + 1) + "/" + pbeCount + ")"
+                    : "Enter encryption password";
+            PasswordDialog dlg = new PasswordDialog(
+                    (Frame) SwingUtilities.getWindowAncestor(this),
+                    "password encrypted layer",
+                    PasswordDialog.Mode.REQUEST, title);
+            dlg.setVisible(true);
+            char[] pwd = dlg.getPassword();
+            if (pwd == null) return;
+            pbePasswords.add(pwd);
+        }
+
+        // Match keys — check at least one is available
+        if (!allMsgKeyIds.isEmpty()) {
             if (secretKeys.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "No private keys loaded.",
                         "Error", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-
-            List<Long> msgKeyIds;
-            try {
-                msgKeyIds = engine.getRecipientKeyIds(cipherData);
-                boolean hasMatch = false;
-                for (PGPSecretKey sk : secretKeys) {
-                    if (msgKeyIds.contains(sk.getKeyID())) {
-                        hasMatch = true;
-                        break;
-                    }
+            boolean hasMatch = false;
+            for (PGPSecretKey sk : secretKeys) {
+                if (allMsgKeyIds.contains(sk.getKeyID())) {
+                    hasMatch = true;
+                    break;
                 }
-                if (!hasMatch) {
-                    String keyIds = msgKeyIds.stream()
-                            .map(id -> String.format("0x%08X", id))
-                            .reduce((a, b) -> a + ", " + b)
-                            .orElse("");
-                    JOptionPane.showMessageDialog(this,
-                            "No matching private key found.\n"
-                            + "Key IDs required by the message: " + keyIds,
-                            "Error", JOptionPane.WARNING_MESSAGE);
-                    return;
-                }
-            } catch (Exception ex) {
+            }
+            if (!hasMatch) {
+                String keyIds = allMsgKeyIds.stream()
+                        .map(id -> String.format("0x%08X", id))
+                        .reduce((a, b) -> a + ", " + b)
+                        .orElse("");
                 JOptionPane.showMessageDialog(this,
-                        "Unable to parse the encrypted message:\n" + ex.getMessage(),
+                        "No matching private key found.\n"
+                        + "Key IDs required by the message: " + keyIds,
                         "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-
-            List<PGPSecretKey> matchingKeys = new ArrayList<>();
+            // Cache empty passphrases for unprotected keys
             for (PGPSecretKey sk : secretKeys) {
-                if (msgKeyIds.contains(sk.getKeyID())) {
-                    matchingKeys.add(sk);
+                if (allMsgKeyIds.contains(sk.getKeyID()) && !engine.hasPassphrase(sk.getKeyID())) {
+                    engine.cacheEmptyPassphraseIfUnprotected(sk);
                 }
             }
-
-            boolean needsPassphrase = false;
-            for (PGPSecretKey sk : matchingKeys) {
-                if (!engine.hasPassphrase(sk.getKeyID())) {
-                    if (!engine.cacheEmptyPassphraseIfUnprotected(sk)) {
-                        needsPassphrase = true;
-                    }
-                }
-            }
-
-            if (needsPassphrase) {
-                String uidText = matchingKeys.stream()
-                        .map(sk -> secretKeyUserIds.get(sk.getKeyID()))
-                        .filter(java.util.Objects::nonNull)
-                        .distinct()
-                        .reduce((a, b) -> a + "\n" + b)
-                        .orElse(null);
-                String keyIdText = matchingKeys.stream()
-                        .map(sk -> String.format("0x%08X", sk.getKeyID()))
-                        .reduce((a, b) -> a + ", " + b)
-                        .orElse("");
-                PasswordDialog dlg = new PasswordDialog(
-                        (Frame) SwingUtilities.getWindowAncestor(this),
-                        uidText, keyIdText, PasswordDialog.Mode.REQUEST);
-                dlg.setVisible(true);
-                char[] passphrase = dlg.getPassword();
-                if (passphrase == null) return;
-                for (PGPSecretKey sk : matchingKeys) {
-                    engine.cachePassphrase(sk.getKeyID(), passphrase);
-                }
-            }
-
-            Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
-            ProgressDialog progress = new ProgressDialog(owner, "Decrypting...");
-            boolean decodeText = !isBinary;
-            SwingWorker<DecryptResult, Void> worker = new SwingWorker<>() {
-                @Override
-                protected DecryptResult doInBackground() throws Exception {
-                    return engine.decrypt(cipherData, secretKeys, publicKeys,
-                            publicKeyUserIdByKeyId, secretKeyUserIds, progress, decodeText);
-                }
-                @Override
-                protected void done() {
-                    progress.dispose();
-                    try {
-                        handleDecryptResult(get(), isBinary);
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                        Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                        String msg = cause.getMessage();
-                        if (msg != null && msg.contains("checksum")) {
-                            JOptionPane.showMessageDialog(ReceivePanel.this,
-                                    "Wrong password for private key.",
-                                    "Error", JOptionPane.ERROR_MESSAGE);
-                            engine.clearPassphraseCache();
-                        } else if (msg != null && msg.contains("No matching private key")) {
-                            JOptionPane.showMessageDialog(ReceivePanel.this,
-                                    "No matching private key found for this message.",
-                                    "Error", JOptionPane.ERROR_MESSAGE);
-                        } else {
-                            JOptionPane.showMessageDialog(ReceivePanel.this,
-                                    "Error during decryption:\n" + msg,
-                                    "Error", JOptionPane.ERROR_MESSAGE);
-                        }
-                    }
-                }
-            };
-            worker.execute();
-            progress.setVisible(true);
-            return;
         }
 
-        // PBE or Compress mode
-        if ("PBE".equals(mode)) {
-            PasswordDialog dlg = new PasswordDialog(
-                    (Frame) SwingUtilities.getWindowAncestor(this),
-                    "password encrypted message",
-                    PasswordDialog.Mode.REQUEST,
-                    "Enter encryption password");
-            dlg.setVisible(true);
-            char[] password = dlg.getPassword();
-            if (password == null) return;
-
-            Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
-            ProgressDialog progress = new ProgressDialog(owner, "Decrypting...");
-            char[] passwordCopy = password;
-            boolean decodeText = !isBinary;
-            SwingWorker<DecryptResult, Void> worker = new SwingWorker<>() {
-                @Override
-                protected DecryptResult doInBackground() throws Exception {
-                    return engine.decryptPassword(cipherData, passwordCopy,
-                            publicKeys, publicKeyUserIdByKeyId, progress, decodeText);
-                }
-                @Override
-                protected void done() {
-                    progress.dispose();
-                    try {
-                        handleDecryptResult(get(), isBinary);
-                    } catch (Exception ex) {
-                        Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                        JOptionPane.showMessageDialog(ReceivePanel.this,
-                                "Error during decryption:\n" + cause.getMessage(),
-                                "Error", JOptionPane.ERROR_MESSAGE);
-                    }
-                }
-            };
-            worker.execute();
-            progress.setVisible(true);
-            return;
-        }
-
-        // Compress mode
+        // Setup passphrase provider — called from background thread when engine needs a passphrase
         Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
-            ProgressDialog progress = new ProgressDialog(owner, "Decompressing...");
+        engine.setPassphraseProvider(keyId -> {
+            try {
+                final char[][] result = new char[1][];
+                String uid = secretKeyUserIds.get(keyId);
+                String keyIdStr = String.format("0x%08X", keyId);
+                SwingUtilities.invokeAndWait(() -> {
+                    PasswordDialog dlg = new PasswordDialog(owner, uid, keyIdStr,
+                            PasswordDialog.Mode.REQUEST);
+                    dlg.setVisible(true);
+                    result[0] = dlg.getPassword();
+                });
+                return result[0];
+            } catch (Exception ex) {
+                return null;
+            }
+        });
+
+        // Unified decrypt
+        String progressTitle = (pbeCount > 0 || !allMsgKeyIds.isEmpty()) ? "Decrypting..." : "Decompressing...";
+        ProgressDialog progress = new ProgressDialog(owner, progressTitle);
         boolean decodeText = !isBinary;
         SwingWorker<DecryptResult, Void> worker = new SwingWorker<>() {
             @Override
             protected DecryptResult doInBackground() throws Exception {
-                return engine.decryptCompress(cipherData,
-                        publicKeys, publicKeyUserIdByKeyId, progress, decodeText);
+                return engine.decryptNested(cipherData, secretKeys, publicKeys,
+                        publicKeyUserIdByKeyId, secretKeyUserIds, pbePasswords,
+                        progress, decodeText);
             }
             @Override
             protected void done() {
                 progress.dispose();
+                engine.setPassphraseProvider(null);
                 try {
                     handleDecryptResult(get(), isBinary);
                 } catch (Exception ex) {
+                    ex.printStackTrace();
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                    JOptionPane.showMessageDialog(ReceivePanel.this,
-                            "Error during decompression:\n" + cause.getMessage(),
-                            "Error", JOptionPane.ERROR_MESSAGE);
+                    String msg = cause.getMessage();
+                    if (msg != null && msg.contains("checksum")) {
+                        JOptionPane.showMessageDialog(ReceivePanel.this,
+                                "Wrong password for private key.",
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                        engine.clearPassphraseCache();
+                    } else if (msg != null && msg.contains("No matching private key")) {
+                        JOptionPane.showMessageDialog(ReceivePanel.this,
+                                msg, "Error", JOptionPane.ERROR_MESSAGE);
+                    } else if (msg != null && msg.contains("Password required")) {
+                        JOptionPane.showMessageDialog(ReceivePanel.this,
+                                "Wrong password for encrypted layer.",
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                    } else {
+                        JOptionPane.showMessageDialog(ReceivePanel.this,
+                                "Error during decryption:\n" + msg,
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                    }
                 }
             }
         };
@@ -750,10 +689,22 @@ public class ReceivePanel extends JPanel {
         progress.setVisible(true);
     }
 
+    private static void scrollToTop(JComponent comp) {
+        JScrollPane sp = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, comp);
+        if (sp != null) {
+            sp.getVerticalScrollBar().setValue(0);
+        }
+    }
+
     private void handleDecryptResult(DecryptResult result, boolean isBinary) {
         cleanupTempFiles();
+        if (result.getTempFilePath() != null) {
+            tempFiles.add(result.getTempFilePath());
+        }
         verificationArea.setText(result.getVerificationDetail());
+        EventQueue.invokeLater(() -> scrollToTop(verificationArea));
         encryptionMetadataArea.setText(result.getEncryptionMetadataText());
+        EventQueue.invokeLater(() -> scrollToTop(encryptionMetadataArea));
 
         // Handle compound message attachments
         lastCompound = result.getCompoundMessage();
@@ -762,6 +713,7 @@ public class ReceivePanel extends JPanel {
         boolean hasCompound = lastCompound != null && !lastCompound.getAttachments().isEmpty();
         if (hasCompound) {
             plainTextArea.setText(result.getPlainText());
+            EventQueue.invokeLater(() -> scrollToTop(plainTextArea));
             for (CompoundMessage.Attachment att : lastCompound.getAttachments()) {
                 attachListModel.addElement(att.getFilename());
             }
@@ -805,16 +757,31 @@ public class ReceivePanel extends JPanel {
             }
         } else {
             plainTextArea.setText(result.getPlainText());
+            EventQueue.invokeLater(() -> scrollToTop(plainTextArea));
             saveAttachButton.setEnabled(false);
         }
 
         // Highlight keys used for decryption and signature verification
         publicKeyPanel.clearSelection();
         privateKeyPanel.clearSelection();
-        if (meta != null && meta.getRecipientKeyId() != null) {
-            PGPKeyInfo privKey = findKeyByKeyId(privateKeyBundle, meta.getRecipientKeyId());
-            if (privKey != null) {
-                privateKeyPanel.setProgrammaticSelection(List.of(privKey));
+        if (meta != null) {
+            List<DecryptResult.EncryptionLayer> layers = meta.getEncryptionLayers();
+            if (layers != null && !layers.isEmpty()) {
+                List<PGPKeyInfo> usedPrivKeys = new ArrayList<>();
+                for (DecryptResult.EncryptionLayer layer : layers) {
+                    if (layer.getType() == DecryptResult.EncryptionLayer.Type.PUBLIC_KEY
+                            && layer.getRecipientKeyId() != null) {
+                        PGPKeyInfo privKey = findKeyByKeyId(privateKeyBundle, layer.getRecipientKeyId());
+                        if (privKey != null && !usedPrivKeys.contains(privKey))
+                            usedPrivKeys.add(privKey);
+                    }
+                }
+                if (!usedPrivKeys.isEmpty())
+                    privateKeyPanel.setProgrammaticSelection(usedPrivKeys);
+            } else if (meta.getRecipientKeyId() != null) {
+                PGPKeyInfo privKey = findKeyByKeyId(privateKeyBundle, meta.getRecipientKeyId());
+                if (privKey != null)
+                    privateKeyPanel.setProgrammaticSelection(List.of(privKey));
             }
         }
         List<PGPKeyInfo> signerKeys = new ArrayList<>();
@@ -833,7 +800,6 @@ public class ReceivePanel extends JPanel {
         if (tempPath != null) {
             lastCompound = new CompoundMessage("", java.util.List.of(
                     new CompoundMessage.Attachment(origName, tempPath, 0, -1)));
-            tempFiles.add(tempPath);
         } else if (rawContent != null) {
             lastCompound = new CompoundMessage("", java.util.List.of(
                     new CompoundMessage.Attachment(origName, rawContent)));
