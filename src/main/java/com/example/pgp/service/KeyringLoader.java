@@ -178,6 +178,7 @@ public class KeyringLoader {
             case PublicKeyAlgorithmTags.Ed25519:
             case PublicKeyAlgorithmTags.EDDSA:
             case PublicKeyAlgorithmTags.X25519:
+            case PublicKeyAlgorithmTags.ECDH:
                 return 256;
             case PublicKeyAlgorithmTags.Ed448:
             case PublicKeyAlgorithmTags.X448:

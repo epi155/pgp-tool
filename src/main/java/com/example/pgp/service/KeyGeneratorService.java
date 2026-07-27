@@ -52,8 +52,17 @@ public class KeyGeneratorService {
                 CompressionAlgorithmTags.ZLIB, CompressionAlgorithmTags.BZIP2,
                 CompressionAlgorithmTags.ZIP});
 
+        int hashAlgo;
+        if (masterAlgoTag == PublicKeyAlgorithmTags.EDDSA
+                || masterAlgoTag == PublicKeyAlgorithmTags.Ed25519)
+            hashAlgo = HashAlgorithmTags.SHA512;
+        else if (masterAlgoTag == PublicKeyAlgorithmTags.Ed448)
+            hashAlgo = 27; // SHAKE256
+        else
+            hashAlgo = HashAlgorithmTags.SHA256;
+
         JcaPGPContentSignerBuilder signerBuilder = new JcaPGPContentSignerBuilder(
-                masterKeyPair.getPublicKey().getAlgorithm(), HashAlgorithmTags.SHA256)
+                masterKeyPair.getPublicKey().getAlgorithm(), hashAlgo)
                 .setProvider("BC");
 
         PBESecretKeyEncryptor emptyEncryptor = new PBESecretKeyEncryptor(
@@ -115,7 +124,7 @@ public class KeyGeneratorService {
             case EDDSA: return PublicKeyAlgorithmTags.EDDSA;
             case ED448: return PublicKeyAlgorithmTags.Ed448;
             case ECDH: return PublicKeyAlgorithmTags.ECDH;
-            case XDH: return PublicKeyAlgorithmTags.X25519;
+            case XDH: return PublicKeyAlgorithmTags.ECDH;
             case X448: return PublicKeyAlgorithmTags.X448;
         }
         throw new IllegalArgumentException("Unknown algorithm: " + spec.getAlgorithm());
