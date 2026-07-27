@@ -15,7 +15,7 @@ public class PasswordDialog extends JDialog {
     private JLabel statusLabel;
     private JButton okBtn;
 
-    public enum Mode { REQUEST, CREATE }
+    public enum Mode { REQUEST, CREATE, CREATE_STRICT }
 
     public PasswordDialog(Frame owner, String hint) {
         this(owner, null, hint, Mode.REQUEST);
@@ -31,7 +31,7 @@ public class PasswordDialog extends JDialog {
     }
 
     public PasswordDialog(Frame owner, String uidText, String keyIdText, Mode mode) {
-        super(owner, mode == Mode.CREATE ? "Create encryption password" : "Enter private key password", true);
+        super(owner, mode == Mode.CREATE || mode == Mode.CREATE_STRICT ? "Create encryption password" : "Enter private key password", true);
         this.mode = mode;
         setLayout(new BorderLayout(10, 10));
 
@@ -69,13 +69,16 @@ public class PasswordDialog extends JDialog {
         }
 
         gbc.gridx = 0; gbc.gridy = row;
-        fieldsPanel.add(new JLabel("Password for " + keyIdText + ":"), gbc);
+        String pwLabel = (keyIdText != null && !keyIdText.isEmpty())
+                ? "Password for " + keyIdText + ":"
+                : "Password:";
+        fieldsPanel.add(new JLabel(pwLabel), gbc);
         gbc.gridx = 1; gbc.weightx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
         passwordField = new JPasswordField(20);
         fieldsPanel.add(passwordField, gbc);
         row++;
 
-        if (mode == Mode.CREATE) {
+        if (mode == Mode.CREATE || mode == Mode.CREATE_STRICT) {
             gbc.gridx = 0; gbc.gridy = row;
             gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE;
             fieldsPanel.add(new JLabel("Confirm:"), gbc);
@@ -93,7 +96,7 @@ public class PasswordDialog extends JDialog {
 
         statusLabel = new JLabel(" ");
         statusLabel.setForeground(Color.RED.darker());
-        if (mode == Mode.CREATE) {
+        if (mode == Mode.CREATE || mode == Mode.CREATE_STRICT) {
             gbc.gridx = 1; gbc.gridy = row;
             gbc.weightx = 1;
             fieldsPanel.add(statusLabel, gbc);
@@ -110,10 +113,11 @@ public class PasswordDialog extends JDialog {
 
         add(content);
 
-        okBtn.setEnabled(mode != Mode.CREATE);
+        okBtn.setEnabled(mode == Mode.REQUEST);
 
         okBtn.addActionListener(e -> {
-            if (mode == Mode.CREATE && (protectCb == null || protectCb.isSelected())) {
+            if ((mode == Mode.CREATE && (protectCb == null || protectCb.isSelected()))
+                    || mode == Mode.CREATE_STRICT) {
                 char[] p1 = passwordField.getPassword();
                 char[] p2 = confirmField.getPassword();
                 if (p1.length == 0 || p2.length == 0) return;
@@ -124,7 +128,7 @@ public class PasswordDialog extends JDialog {
         });
         cancelBtn.addActionListener(e -> dispose());
 
-        if (mode == Mode.CREATE) {
+        if (mode == Mode.CREATE || mode == Mode.CREATE_STRICT) {
             KeyAdapter validator = new KeyAdapter() {
                 public void keyReleased(KeyEvent e) {
                     updateCreateState();
@@ -139,11 +143,13 @@ public class PasswordDialog extends JDialog {
                 confirmField.setEchoChar(show ? (char) 0 : '\u2022');
             });
 
-            protectCb.addActionListener(e -> updateCreateState());
+            if (protectCb != null) {
+                protectCb.addActionListener(e -> updateCreateState());
+            }
         }
 
         passwordField.addActionListener(e -> {
-            if (mode != Mode.CREATE || okBtn.isEnabled()) {
+            if (mode == Mode.REQUEST || okBtn.isEnabled()) {
                 confirmed = true;
                 dispose();
             }
@@ -163,7 +169,7 @@ public class PasswordDialog extends JDialog {
     }
 
     private void updateCreateState() {
-        boolean protect = protectCb.isSelected();
+        boolean protect = protectCb == null || protectCb.isSelected();
         passwordField.setEnabled(protect);
         confirmField.setEnabled(protect);
         showCheckBox.setEnabled(protect);

@@ -33,6 +33,7 @@ public class KeyTreePanel extends JPanel {
     private String backupFilterText = "";
     private List<PGPKeyInfo> backupAllKeys;
     private final List<Consumer<Boolean>> viewModeListeners = new ArrayList<>();
+    private final List<Runnable> selectionListeners = new ArrayList<>();
     private JButton addButton;
     private JButton clearButton;
     private JPanel btnRow;
@@ -158,6 +159,7 @@ public class KeyTreePanel extends JPanel {
         restoreSelection(new ArrayList<>(persistentSelection));
         syncPersistentWithTree();
         syncing = false;
+        fireSelectionListeners();
     }
 
     private void rebuildTree(List<PGPKeyInfo> keysToShow) {
@@ -230,6 +232,7 @@ public class KeyTreePanel extends JPanel {
         }
         persistentSelection.clear();
         tree.clearSelection();
+        fireSelectionListeners();
     }
 
     private boolean isVisibleInTree(PGPKeyInfo key) {
@@ -404,6 +407,10 @@ public class KeyTreePanel extends JPanel {
         }
     }
 
+    public void refreshClearButtonState() {
+        updateClearButtonState();
+    }
+
     public void setOnClearCallback(Runnable callback) {
         this.onClearCallback = callback;
     }
@@ -425,7 +432,16 @@ public class KeyTreePanel extends JPanel {
                 syncPersistentWithTree();
             }
             listener.valueChanged(e);
+            fireSelectionListeners();
         });
+    }
+
+    public void addSelectionListener(Runnable listener) {
+        selectionListeners.add(listener);
+    }
+
+    private void fireSelectionListeners() {
+        for (Runnable r : selectionListeners) r.run();
     }
 
     public void addViewModeListener(Consumer<Boolean> listener) {
@@ -480,6 +496,27 @@ public class KeyTreePanel extends JPanel {
         this.userSelectionAllowed = allowed;
     }
 
+    public void selectDefaultIfEmpty() {
+        if (!persistentSelection.isEmpty() || allKeys == null || allKeys.isEmpty()) return;
+        for (PGPKeyInfo master : allKeys) {
+            PGPKeyInfo candidate = null;
+            for (PGPKeyInfo sub : master.getSubKeys()) {
+                if (matchesRequirement(sub)) {
+                    if (candidate == null || sub.getCreationTime().after(candidate.getCreationTime()))
+                        candidate = sub;
+                }
+            }
+            if (candidate != null) {
+                setProgrammaticSelection(java.util.Collections.singletonList(candidate));
+                return;
+            }
+            if (matchesRequirement(master)) {
+                setProgrammaticSelection(java.util.Collections.singletonList(master));
+                return;
+            }
+        }
+    }
+
     public void setProgrammaticSelection(List<PGPKeyInfo> keysToSelect) {
         syncing = true;
         userSelectionAllowed = true;
@@ -491,9 +528,10 @@ public class KeyTreePanel extends JPanel {
                 tree.addSelectionPath(new TreePath(node.getPath()));
             }
         }
-        userSelectionAllowed = false;
+        userSelectionAllowed = true;
         syncing = false;
         persistentSelection.addAll(keysToSelect);
+        fireSelectionListeners();
     }
 
     private class KeyTreeCellRenderer extends DefaultTreeCellRenderer {

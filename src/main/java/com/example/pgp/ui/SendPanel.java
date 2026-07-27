@@ -38,19 +38,23 @@ import java.util.List;
 public class SendPanel extends JPanel {
 
     private final transient PGPEngine engine;
-    private final KeyTreePanel privateKeyPanel;
-    private final KeyTreePanel publicKeyPanel;
+    private final boolean advancedMode;
+    private final JTabbedPane encLayerTabs;
+    private final List<EncryptLayerPanel> encLayers = new ArrayList<>();
+    private int suppressEncLayerTabListener;
+    private transient KeyTreePanel activeEncKeyPanel;
+    private final JTabbedPane signerTabs;
+    private final List<SignerPanel> signerPanels = new ArrayList<>();
+    private int suppressTabListener;
     private final JTextArea plainTextArea;
     private final JTextArea cipherTextArea;
     private final JCheckBox signCheckBox;
+    private final JCheckBox encCheckBox;
     private final JButton encryptButton;
     private final JTextField userFilterField;
     private final JButton clearSelButton;
     private final JToggleButton showViewBtn;
-    private final JComboBox<String> encModeCombo;
-    private final JComboBox<String> encAlgoCombo;
     private final JComboBox<String> compAlgoCombo;
-    private final JComboBox<String> hashAlgoCombo;
     private final JList<String> attachList;
     private final DefaultListModel<String> attachListModel;
     private final List<File> attachmentFiles = new ArrayList<>();
@@ -62,34 +66,76 @@ public class SendPanel extends JPanel {
     private final JPanel outputCardPanel;
     private final JPanel outerPanel;
 
-    private transient KeyBundle publicKeyBundle;
-    private transient KeyBundle privateKeyBundle;
-
-    private final java.util.List<String> publicKeyringPaths = new java.util.ArrayList<>();
-    private final java.util.List<String> privateKeyringPaths = new java.util.ArrayList<>();
-
-    public SendPanel(PGPEngine engine) {
+    public SendPanel(PGPEngine engine, boolean advancedMode) {
         this.engine = engine;
+        this.advancedMode = advancedMode;
         setLayout(new BorderLayout(5, 5));
 
-        privateKeyPanel = new KeyTreePanel("Sender Private Key (Sign)", false, true);
-        publicKeyPanel = new KeyTreePanel("Recipient Public Key (Encrypt)", true, false);
-        plainTextArea = new JTextArea(12, 40);
-        cipherTextArea = new JTextArea(12, 40);
-        signCheckBox = new JCheckBox("Sign");
-        encryptButton = new JButton("Encrypt");
-        encAlgoCombo = new JComboBox<>(new String[]{"AES-128", "AES-192", "AES-256", "CAST5", "Blowfish", "Triple-DES", "Twofish"});
-        encAlgoCombo.setSelectedItem("AES-128");
-        encAlgoCombo.setEnabled(false);
-        encModeCombo = new JComboBox<>(new String[]{"Public Key", "Password", "Compress"});
-        encModeCombo.setSelectedItem("Public Key");
+        encCheckBox = new JCheckBox("Enc", true);
         compAlgoCombo = new JComboBox<>(new String[]{"ZIP", "ZLIB", "BZIP2", "None"});
         compAlgoCombo.setSelectedItem("ZLIB");
         compAlgoCombo.setEnabled(false);
-        hashAlgoCombo = new JComboBox<>(new String[]{"SHA-256", "SHA-384", "SHA-512", "RIPEMD160"});
-        hashAlgoCombo.setSelectedItem("SHA-256");
-        hashAlgoCombo.setEnabled(false);
 
+        userFilterField = new JTextField(12);
+        userFilterField.setEnabled(false);
+        userFilterField.getDocument().addDocumentListener(new DocumentListener() {
+            private void apply() {
+                SwingUtilities.invokeLater(() -> {
+                    if (activeEncKeyPanel != null)
+                        activeEncKeyPanel.setFilterText(userFilterField.getText());
+                });
+            }
+            @Override
+            public void insertUpdate(DocumentEvent e) { apply(); }
+            @Override
+            public void removeUpdate(DocumentEvent e) { apply(); }
+            @Override
+            public void changedUpdate(DocumentEvent e) { apply(); }
+        });
+        clearSelButton = new JButton("Clear Sel");
+        clearSelButton.setEnabled(false);
+        clearSelButton.addActionListener(e -> {
+            if (activeEncKeyPanel != null) activeEncKeyPanel.clearSelection();
+        });
+        showViewBtn = new JToggleButton("Show Sel");
+        showViewBtn.setEnabled(false);
+        showViewBtn.addActionListener(e -> {
+            if (activeEncKeyPanel != null) activeEncKeyPanel.setSelectedViewActive(showViewBtn.isSelected());
+        });
+
+        encLayerTabs = new JTabbedPane();
+        if (advancedMode) {
+            encLayerTabs.addChangeListener(e -> {
+                if (suppressEncLayerTabListener > 0) return;
+                int idx = encLayerTabs.getSelectedIndex();
+                if (idx >= 0 && idx == encLayerTabs.getTabCount() - 1) {
+                    addEncryptLayer();
+                }
+                updateActiveEncLayer();
+            });
+            encLayerTabs.addTab("+", null);
+        } else {
+            hideTabArea(encLayerTabs);
+        }
+        plainTextArea = new JTextArea(12, 40);
+        cipherTextArea = new JTextArea(12, 40);
+        signCheckBox = new JCheckBox("Sign");
+        encryptButton = new JButton("Encrypt") {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                GradientPaint gp = new GradientPaint(
+                        0, 0, Color.decode("#FFD700"), 0, getHeight(), Color.decode("#DAA520"));
+                g2.setPaint(gp);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        encryptButton.setContentAreaFilled(false);
+        encryptButton.setOpaque(false);
+        encryptButton.setForeground(Color.BLUE);
+        encryptButton.setFont(encryptButton.getFont().deriveFont(Font.BOLD));
         Font mono = new Font("Monospaced", Font.PLAIN, 12);
         plainTextArea.setFont(mono);
         cipherTextArea.setFont(mono);
@@ -97,12 +143,27 @@ public class SendPanel extends JPanel {
         cipherTextArea.setWrapStyleWord(true);
         cipherTextArea.setEditable(false);
 
-        signCheckBox.setEnabled(false);
-        signCheckBox.setSelected(false);
         encryptButton.setEnabled(false);
 
+        signerTabs = new JTabbedPane();
+        if (advancedMode) {
+            signerTabs.addChangeListener(e -> {
+                if (suppressTabListener > 0) return;
+                int idx = signerTabs.getSelectedIndex();
+                if (idx >= 0 && idx == signerTabs.getTabCount() - 1) {
+                    addSignerTab();
+                }
+            });
+            signerTabs.addTab("+", null);
+        } else {
+            hideTabArea(signerTabs);
+        }
+
+        JPanel signerContainer = new JPanel(new BorderLayout(0, 2));
+        signerContainer.add(signerTabs, BorderLayout.CENTER);
+
         JSplitPane topSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
-                privateKeyPanel, UIUtils.wrapInScroll(plainTextArea, "Plain Text Message"));
+                signerContainer, UIUtils.wrapInScroll(plainTextArea, "Plain Text Message"));
         topSplit.setResizeWeight(0.35);
 
         outputCardLayout = new CardLayout();
@@ -126,48 +187,23 @@ public class SendPanel extends JPanel {
         fileOutputPanel.add(fileRow, BorderLayout.CENTER);
 
         JSplitPane bottomSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
-                publicKeyPanel, outputCardPanel);
+                encLayerTabs, outputCardPanel);
         bottomSplit.setResizeWeight(0.35);
 
         JPanel centerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
         centerPanel.add(encryptButton);
-        centerPanel.add(new JLabel("Mode:"));
-        centerPanel.add(encModeCombo);
-        centerPanel.add(new JLabel("Enc:"));
-        centerPanel.add(encAlgoCombo);
+        centerPanel.add(encCheckBox);
         centerPanel.add(new JLabel("Comp:"));
         centerPanel.add(compAlgoCombo);
         centerPanel.add(signCheckBox);
-        centerPanel.add(new JLabel("Hash:"));
-        centerPanel.add(hashAlgoCombo);
         addAttachButton = new JButton("Add File...");
         removeAttachButton = new JButton("Remove");
         removeAttachButton.setEnabled(false);
         centerPanel.add(addAttachButton);
         centerPanel.add(removeAttachButton);
         centerPanel.add(new JLabel("User:"));
-        userFilterField = new JTextField(12);
         centerPanel.add(userFilterField);
-        userFilterField.setEnabled(false);
-        userFilterField.getDocument().addDocumentListener(new DocumentListener() {
-            private void apply() {
-                SwingUtilities.invokeLater(() ->
-                        publicKeyPanel.setFilterText(userFilterField.getText()));
-            }
-            @Override
-            public void insertUpdate(DocumentEvent e) { apply(); }
-            @Override
-            public void removeUpdate(DocumentEvent e) { apply(); }
-            @Override
-            public void changedUpdate(DocumentEvent e) { apply(); }
-        });
-        clearSelButton = new JButton("Clear Sel");
-        clearSelButton.setEnabled(false);
-        clearSelButton.addActionListener(e -> publicKeyPanel.clearSelection());
         centerPanel.add(clearSelButton);
-        showViewBtn = new JToggleButton("Show Sel");
-        showViewBtn.setEnabled(false);
-        showViewBtn.addActionListener(e -> publicKeyPanel.setSelectedViewActive(showViewBtn.isSelected()));
         centerPanel.add(showViewBtn);
 
         attachListModel = new DefaultListModel<>();
@@ -199,19 +235,20 @@ public class SendPanel extends JPanel {
         outerPanel.add(bottomSplit, gbc);
         add(outerPanel, BorderLayout.CENTER);
 
-        privateKeyPanel.getLoadButton().addActionListener(this::loadPrivateKeyring);
-        publicKeyPanel.getLoadButton().addActionListener(this::loadPublicKeyring);
-        publicKeyPanel.getAddButton().addActionListener(e -> addPublicKeyring());
-        publicKeyPanel.setAddButtonVisible(true);
         encryptButton.addActionListener(this::onEncrypt);
-        encModeCombo.addActionListener(e -> {
-            String mode = (String) encModeCombo.getSelectedItem();
-            boolean isPublicKey = "Public Key".equals(mode);
-            publicKeyPanel.setLoadEnabled(isPublicKey);
-            publicKeyPanel.setAddButtonEnabled(isPublicKey);
-            encAlgoCombo.setEnabled(isPublicKey || "Password".equals(mode));
+        encCheckBox.addActionListener(e -> {
+            boolean enc = encCheckBox.isSelected();
+            setEncLayersEnabled(enc);
             updateEncryptButton();
         });
+        signCheckBox.addActionListener(e -> {
+            boolean sign = signCheckBox.isSelected();
+            setSignersEnabled(sign);
+            updateEncryptButton();
+        });
+
+        addEncryptLayer();
+        addSignerTab();
         addAttachButton.addActionListener(this::addAttachment);
         removeAttachButton.addActionListener(this::removeAttachment);
         attachList.addListSelectionListener(e ->
@@ -353,154 +390,13 @@ public class SendPanel extends JPanel {
         });
         plainTextArea.getInputMap().put(KeyStroke.getKeyStroke("control Y"), "Redo");
         plainTextArea.getInputMap().put(KeyStroke.getKeyStroke("control shift Z"), "Redo");
-        privateKeyPanel.addSelectionListener(e -> updateSignCheckbox());
-        publicKeyPanel.addSelectionListener(e -> updateEncryptButton());
-        publicKeyPanel.addViewModeListener(active -> {
-            updateFilterField();
-            updateShowViewButton();
-        });
-
-        setupKeyDrop(privateKeyPanel, false);
-        setupKeyDrop(publicKeyPanel, true);
-
-        privateKeyPanel.getClearButton();
-        privateKeyPanel.setOnClearCallback(() -> {
-            privateKeyBundle = null;
-            privateKeyringPaths.clear();
-        });
-
-        publicKeyPanel.getClearButton();
-        publicKeyPanel.setOnClearCallback(() -> {
-            publicKeyBundle = null;
-            publicKeyringPaths.clear();
-        });
-
-        setupKeyButtonDrops();
-    }
-
-    private void setupKeyButtonDrops() {
-        publicKeyPanel.getLoadButton().setTransferHandler(
-                UIUtils.createKeyringDropHandler(this::loadPublicKeyring));
-        publicKeyPanel.getAddButton().setTransferHandler(
-                UIUtils.createKeyringDropHandler(this::loadPublicKeyringAdd));
-        privateKeyPanel.getLoadButton().setTransferHandler(
-                UIUtils.createKeyringDropHandler(this::loadPrivateKeyring));
-    }
-
-    private void loadPrivateKeyring(ActionEvent e) {
-        JFileChooser fc = createSecretFileChooser();
-        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            loadPrivateKeyring(fc.getSelectedFile());
-        }
-    }
-
-    private void loadPrivateKeyring(File file) {
-        try {
-            engine.clearPassphraseCache();
-            privateKeyBundle = KeyringLoader.loadSecretKeys(file);
-            privateKeyPanel.setKeys(privateKeyBundle.getKeys());
-            privateKeyPanel.setSourceFile(file.getAbsolutePath());
-            privateKeyringPaths.clear();
-            privateKeyringPaths.add(file.getAbsolutePath());
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Error loading private key:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
-            privateKeyBundle = null;
-            privateKeyPanel.setKeys(null);
-        }
-        updateSignCheckbox();
-    }
-
-    private void loadPublicKeyring(ActionEvent e) {
-        JFileChooser fc = createPublicFileChooser();
-        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            loadPublicKeyring(fc.getSelectedFile());
-        }
-    }
-
-    private void loadPublicKeyring(File file) {
-        try {
-            publicKeyBundle = KeyringLoader.loadPublicKeys(file);
-            publicKeyPanel.resetKeyringCount();
-            publicKeyPanel.setKeys(publicKeyBundle.getKeys());
-            publicKeyPanel.setSourceFile(file.getAbsolutePath());
-            userFilterField.setText("");
-            updateFilterField();
-            publicKeyringPaths.clear();
-            publicKeyringPaths.add(file.getAbsolutePath());
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Error loading public key:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
-            publicKeyBundle = null;
-            publicKeyPanel.setKeys(null);
-        }
-        updateEncryptButton();
-        updateShowViewButton();
-    }
-
-    private void addPublicKeyring() {
-        JFileChooser fc = createPublicFileChooser();
-        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            loadPublicKeyringAdd(fc.getSelectedFile());
-        }
-    }
-
-    private void loadPublicKeyringAdd(File file) {
-        try {
-            KeyBundle bundle = KeyringLoader.loadPublicKeys(file);
-            publicKeyPanel.addKeys(bundle.getKeys());
-            publicKeyPanel.incrementKeyringCount();
-            mergePublicKeyBundle(bundle);
-            publicKeyringPaths.add(file.getAbsolutePath());
-            updateFilterField();
-            updateEncryptButton();
-            updateShowViewButton();
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Error loading public key:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private void mergePublicKeyBundle(KeyBundle bundle) {
-        if (publicKeyBundle != null) {
-            UIUtils.mergeKeyBundle(publicKeyBundle, bundle);
-        } else {
-            publicKeyBundle = bundle;
-        }
     }
 
     private void updateFilterField() {
-        boolean multi = publicKeyPanel.hasMultipleMasterKeys();
-        boolean active = publicKeyPanel.isSelectedViewActive();
+        boolean multi = activeEncKeyPanel != null && activeEncKeyPanel.hasMultipleMasterKeys();
+        boolean active = activeEncKeyPanel != null && activeEncKeyPanel.isSelectedViewActive();
         userFilterField.setEnabled(!active && multi);
         clearSelButton.setEnabled(!active && multi);
-    }
-
-    private void setupKeyDrop(KeyTreePanel panel, boolean isPublic) {
-        panel.setTransferHandler(new TransferHandler() {
-            @Override public boolean canImport(TransferSupport support) {
-                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
-            }
-            @Override public boolean importData(TransferSupport support) {
-                if (!canImport(support)) return false;
-                Point pt = support.getDropLocation().getDropPoint();
-                Component target = ((JComponent) support.getComponent()).findComponentAt(pt);
-                if (target == panel.getClearButton()) return false;
-                try {
-                    java.util.List<File> files = (java.util.List<File>) support.getTransferable()
-                            .getTransferData(DataFlavor.javaFileListFlavor);
-                    if (isPublic) {
-                        if (support.isDrop() && support.getDropAction() == MOVE)
-                            loadPublicKeyringAdd(files.get(0));
-                        else
-                            loadPublicKeyring(files.get(0));
-                    } else {
-                        loadPrivateKeyring(files.get(0));
-                    }
-                    return true;
-                } catch (Exception ex) { return false; }
-            }
-        });
     }
 
     private void updateEncryptButton() {
@@ -508,43 +404,42 @@ public class SendPanel extends JPanel {
             updateOutputMode();
             return;
         }
-        String mode = (String) encModeCombo.getSelectedItem();
-        if ("Compress".equals(mode)) {
+        if (!encCheckBox.isSelected()) {
             encryptButton.setEnabled(true);
-            encAlgoCombo.setEnabled(false);
             compAlgoCombo.setEnabled(true);
             return;
         }
-        boolean isPassword = "Password".equals(mode);
-        if (isPassword) {
-            encryptButton.setEnabled(true);
-            encAlgoCombo.setEnabled(true);
-            compAlgoCombo.setEnabled(true);
-            return;
+        boolean allValid = !encLayers.isEmpty();
+        for (EncryptLayerPanel layer : encLayers) {
+            if (layer.usePasswordCheckBox.isSelected()) {
+                char[] pw = layer.passwordField.getPassword();
+                char[] vw = layer.verifyField.getPassword();
+                boolean pwOk = pw != null && pw.length > 0;
+                boolean matchOk = java.util.Arrays.equals(pw, vw);
+                if (!pwOk || !matchOk) { allValid = false; break; }
+            } else {
+                boolean hasKeys = layer.keyPanel.getSelectedKeys().stream()
+                    .anyMatch(PGPKeyInfo::canEncrypt);
+                if (!hasKeys) { allValid = false; break; }
+            }
         }
-        // Public Key mode
-        List<PGPKeyInfo> sel = publicKeyPanel.getSelectedKeys();
-        boolean hasKeys = sel.stream().anyMatch(PGPKeyInfo::canEncrypt);
-        encryptButton.setEnabled(hasKeys);
-        encAlgoCombo.setEnabled(hasKeys);
-        compAlgoCombo.setEnabled(hasKeys);
+        encryptButton.setEnabled(allValid);
+        compAlgoCombo.setEnabled(true);
         updateShowViewButton();
     }
 
     private void updateSignCheckbox() {
-        boolean valid = privateKeyPanel.getSelectedKeys().stream().anyMatch(PGPKeyInfo::canSign);
-        signCheckBox.setEnabled(valid);
-        signCheckBox.setSelected(valid);
-        hashAlgoCombo.setEnabled(valid);
+        updateEncryptButton();
     }
 
     private void updateShowViewButton() {
-        boolean active = publicKeyPanel.isSelectedViewActive();
+        boolean active = activeEncKeyPanel != null && activeEncKeyPanel.isSelectedViewActive();
         showViewBtn.setSelected(active);
         if (active) {
             showViewBtn.setEnabled(true);
         } else {
-            showViewBtn.setEnabled(publicKeyPanel.getSelectedKeys().size() >= 2);
+            showViewBtn.setEnabled(activeEncKeyPanel != null
+                && activeEncKeyPanel.getSelectedKeys().size() >= 2);
         }
     }
 
@@ -552,21 +447,27 @@ public class SendPanel extends JPanel {
         boolean has = !attachmentFiles.isEmpty();
         outputCardLayout.show(outputCardPanel, has ? "compound" : "text");
         if (has) {
-            String mode = (String) encModeCombo.getSelectedItem();
             boolean outputChosen = outputFileField.getText() != null && !outputFileField.getText().trim().isEmpty();
-            if ("Compress".equals(mode)) {
+            if (!encCheckBox.isSelected()) {
                 encryptButton.setEnabled(outputChosen);
-                encAlgoCombo.setEnabled(false);
-                compAlgoCombo.setEnabled(true);
-            } else if ("Password".equals(mode)) {
-                encryptButton.setEnabled(outputChosen);
-                encAlgoCombo.setEnabled(true);
                 compAlgoCombo.setEnabled(true);
             } else {
-                boolean hasKeys = publicKeyPanel.getSelectedKeys().stream().anyMatch(PGPKeyInfo::canEncrypt);
-                encryptButton.setEnabled(hasKeys && outputChosen);
-                encAlgoCombo.setEnabled(hasKeys);
-                compAlgoCombo.setEnabled(hasKeys);
+                boolean allValid = !encLayers.isEmpty();
+                for (EncryptLayerPanel layer : encLayers) {
+                    if (layer.usePasswordCheckBox.isSelected()) {
+                        char[] pw = layer.passwordField.getPassword();
+                        char[] vw = layer.verifyField.getPassword();
+                        boolean pwOk = pw != null && pw.length > 0;
+                        boolean matchOk = java.util.Arrays.equals(pw, vw);
+                        if (!pwOk || !matchOk) { allValid = false; break; }
+                    } else {
+                        boolean hasKeys = layer.keyPanel.getSelectedKeys().stream()
+                            .anyMatch(PGPKeyInfo::canEncrypt);
+                        if (!hasKeys) { allValid = false; break; }
+                    }
+                }
+                encryptButton.setEnabled(allValid && outputChosen);
+                compAlgoCombo.setEnabled(true);
             }
         } else {
             updateEncryptButton();
@@ -636,31 +537,115 @@ public class SendPanel extends JPanel {
     }
 
     public void savePreferences(java.util.prefs.Preferences prefs) {
-        prefs.put("enc_algo", (String) encAlgoCombo.getSelectedItem());
+        prefs.putBoolean("enc_enabled", encCheckBox.isSelected());
+        prefs.putBoolean("sign_enabled", signCheckBox.isSelected());
         prefs.put("comp_algo", (String) compAlgoCombo.getSelectedItem());
-        prefs.put("hash_algo", (String) hashAlgoCombo.getSelectedItem());
-        prefs.put("send_pub_paths", String.join(File.pathSeparator, publicKeyringPaths));
-        prefs.put("send_priv_paths", String.join(File.pathSeparator, privateKeyringPaths));
+        prefs.remove("hash_algo");
+        int count = signerPanels.size();
+        prefs.putInt("signer_count", count);
+        for (int i = 0; i < count; i++)
+            prefs.put("signer_hash_" + i,
+                (String) signerPanels.get(i).hashCombo.getSelectedItem());
+        for (int i = count; ; i++) {
+            if (prefs.get("signer_hash_" + i, null) == null) break;
+            prefs.remove("signer_hash_" + i);
+        }
+        prefs.remove("send_pub_paths");
+        prefs.remove("send_priv_paths");
+        prefs.remove("enc_algo");
+        int layerCount = encLayers.size();
+        prefs.putInt("layer_count", layerCount);
+        for (int i = 0; i < layerCount; i++) {
+            EncryptLayerPanel layer = encLayers.get(i);
+            prefs.put("layer_algo_" + i, (String) layer.algoCombo.getSelectedItem());
+            prefs.putBoolean("layer_is_password_" + i, layer.usePasswordCheckBox.isSelected());
+            prefs.put("layer_paths_" + i, String.join(File.pathSeparator, layer.keyringPaths));
+        }
+        for (int i = layerCount; ; i++) {
+            if (prefs.get("layer_algo_" + i, null) == null) break;
+            prefs.remove("layer_algo_" + i);
+            prefs.remove("layer_is_password_" + i);
+            prefs.remove("layer_paths_" + i);
+        }
+        for (int i = 0; i < count; i++) {
+            String path = signerPanels.get(i).keyringPath;
+            if (path != null)
+                prefs.put("signer_path_" + i, path);
+            else
+                prefs.remove("signer_path_" + i);
+        }
+        for (int i = count; ; i++) {
+            if (prefs.get("signer_path_" + i, null) == null) break;
+            prefs.remove("signer_path_" + i);
+        }
     }
 
     public void restorePreferences(java.util.prefs.Preferences prefs) {
-        encAlgoCombo.setSelectedItem(prefs.get("enc_algo", "AES-128"));
+        encCheckBox.setSelected(prefs.getBoolean("enc_enabled", true));
+        signCheckBox.setSelected(prefs.getBoolean("sign_enabled", false));
         compAlgoCombo.setSelectedItem(prefs.get("comp_algo", "ZLIB"));
-        hashAlgoCombo.setSelectedItem(prefs.get("hash_algo", "SHA-256"));
 
-        String pubPaths = prefs.get("send_pub_paths", "");
-        if (!pubPaths.isEmpty()) {
-            for (String path : pubPaths.split(File.pathSeparator)) {
-                File f = new File(path);
-                if (f.exists()) {
-                    if (publicKeyringPaths.isEmpty()) {
-                        loadPublicKeyring(f);
-                    } else {
-                        loadPublicKeyringAdd(f);
-                    }
-                } else {
-                    System.err.println("File not found: " + path);
+        int signerCount = prefs.getInt("signer_count", 0);
+        if (!advancedMode && signerCount > 1) signerCount = 1;
+        suppressTabListener++;
+        while (signerTabs.getTabCount() > 0) {
+            signerTabs.removeTabAt(0);
+        }
+        if (advancedMode) {
+            signerTabs.addTab("+", null);
+        }
+        signerPanels.clear();
+        suppressTabListener--;
+        if (signerCount > 0) {
+            for (int i = 0; i < signerCount; i++)
+                addSignerTab(prefs.get("signer_hash_" + i, "SHA-256"));
+        } else {
+            addSignerTab(prefs.get("hash_algo", "SHA-256"));
+        }
+
+        // Restore encrypt layers
+        int layerCount = prefs.getInt("layer_count", 0);
+        if (!advancedMode && layerCount > 1) layerCount = 1;
+        suppressEncLayerTabListener++;
+        while (encLayerTabs.getTabCount() > 0) {
+            encLayerTabs.removeTabAt(0);
+        }
+        if (advancedMode) {
+            encLayerTabs.addTab("+", null);
+        }
+        encLayers.clear();
+        suppressEncLayerTabListener--;
+
+        if (layerCount > 0) {
+            for (int i = 0; i < layerCount; i++) {
+                addEncryptLayer(prefs.get("layer_algo_" + i, "AES-128"));
+                EncryptLayerPanel layer = encLayers.get(i);
+                boolean isPassword = prefs.getBoolean("layer_is_password_" + i, false);
+                layer.usePasswordCheckBox.setSelected(isPassword);
+                if (isPassword) {
+                    layer.cardLayout.show(layer.cardsPanel, "password");
                 }
+                String paths = prefs.get("layer_paths_" + i, "");
+                if (!paths.isEmpty()) {
+                    for (String path : paths.split(File.pathSeparator)) {
+                        File f = new File(path);
+                        if (f.exists())
+                            layer.addKeyring(f);
+                    }
+                }
+            }
+        } else {
+            // Backward compat: old send_pub_paths
+            String pubPaths = prefs.get("send_pub_paths", "");
+            if (!pubPaths.isEmpty()) {
+                addEncryptLayer(prefs.get("enc_algo", "AES-128"));
+                for (String path : pubPaths.split(File.pathSeparator)) {
+                    File f = new File(path);
+                    if (f.exists())
+                        encLayers.get(0).loadKeyring(f);
+                }
+            } else {
+                addEncryptLayer();
             }
         }
 
@@ -668,43 +653,58 @@ public class SendPanel extends JPanel {
         if (!privPaths.isEmpty()) {
             for (String path : privPaths.split(File.pathSeparator)) {
                 File f = new File(path);
-                if (f.exists()) {
-                    loadPrivateKeyring(f);
+                if (f.exists() && !signerPanels.isEmpty()) {
+                    signerPanels.get(0).loadKeyring(f);
                 } else {
                     System.err.println("File not found: " + path);
                 }
             }
         }
+        for (int i = 0; i < signerPanels.size(); i++) {
+            String path = prefs.get("signer_path_" + i, "");
+            if (!path.isEmpty()) {
+                File f = new File(path);
+                if (f.exists())
+                    signerPanels.get(i).loadKeyring(f);
+            }
+        }
+        // Apply sign/enc enable state after all tabs are fully created
+        setSignersEnabled(signCheckBox.isSelected());
+        setEncLayersEnabled(encCheckBox.isSelected());
     }
 
     private void onEncrypt(ActionEvent e) {
-        String mode = (String) encModeCombo.getSelectedItem();
-        boolean isPassword = "Password".equals(mode);
-        boolean isCompress = "Compress".equals(mode);
-        boolean isPublicKey = !isPassword && !isCompress;
+        boolean encEnabled = encCheckBox.isSelected();
 
-        List<PGPPublicKey> encKeys = null;
-        if (isPublicKey) {
-            List<PGPKeyInfo> selectedPubs = publicKeyPanel.getSelectedKeys();
-            encKeys = new ArrayList<>();
-            for (PGPKeyInfo ki : selectedPubs) {
-                if (ki.canEncrypt()) encKeys.add(ki.getBcKey(PGPPublicKey.class));
+        if (encEnabled) {
+            for (int i = 0; i < encLayers.size(); i++) {
+                EncryptLayerPanel layer = encLayers.get(i);
+                if (layer.usePasswordCheckBox.isSelected()) {
+                    char[] pw = layer.passwordField.getPassword();
+                    char[] vw = layer.verifyField.getPassword();
+                    if (pw == null || pw.length == 0) {
+                        JOptionPane.showMessageDialog(this,
+                            "Layer " + (i + 1) + ": password is required.",
+                            "Warning", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                    if (!java.util.Arrays.equals(pw, vw)) {
+                        JOptionPane.showMessageDialog(this,
+                            "Layer " + (i + 1) + ": passwords do not match.",
+                            "Warning", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                } else {
+                    boolean hasKeys = layer.keyPanel.getSelectedKeys().stream()
+                        .anyMatch(PGPKeyInfo::canEncrypt);
+                    if (!hasKeys) {
+                        JOptionPane.showMessageDialog(this,
+                            "Layer " + (i + 1) + ": select at least one public key with encryption capability.",
+                            "Warning", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                }
             }
-            if (encKeys.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Select at least one public key with encryption capability.",
-                        "Error", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-        }
-
-        char[] messagePassword = null;
-        if (isPassword) {
-            PasswordDialog pwdDlg = new PasswordDialog(
-                    (Frame) SwingUtilities.getWindowAncestor(this),
-                    "symmetric encryption", PasswordDialog.Mode.CREATE);
-            pwdDlg.setVisible(true);
-            messagePassword = pwdDlg.getPassword();
-            if (messagePassword == null) return;
         }
 
         String plainText = plainTextArea.getText();
@@ -724,15 +724,13 @@ public class SendPanel extends JPanel {
 
         List<PGPSecretKey> signKeys = new ArrayList<>();
         List<char[]> signPassphrases = new ArrayList<>();
+        List<Integer> hashAlgos = new ArrayList<>();
 
         if (signCheckBox.isSelected()) {
-            List<PGPKeyInfo> selectedPrivs = privateKeyPanel.getSelectedKeys();
-            if (selectedPrivs.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Select at least one private key to sign.",
-                        "Error", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-            for (PGPKeyInfo ki : selectedPrivs) {
+            for (SignerPanel sp : signerPanels) {
+                List<PGPKeyInfo> sel = sp.keyPanel.getSelectedKeys();
+                if (sel.isEmpty()) continue;
+                PGPKeyInfo ki = sel.get(0);
                 PGPSecretKey sk = ki.getBcKey(PGPSecretKey.class);
                 long keyId = sk.getKeyID();
                 char[] passphrase;
@@ -742,7 +740,7 @@ public class SendPanel extends JPanel {
                     } else {
                         PasswordDialog dlg = new PasswordDialog(
                                 (Frame) SwingUtilities.getWindowAncestor(this),
-                                resolveSignKeyUserId(ki), ki.getKeyIdHex(),
+                                resolveSignKeyUserId(ki, sp), ki.getKeyIdHex(),
                                 PasswordDialog.Mode.REQUEST);
                         dlg.setVisible(true);
                         passphrase = dlg.getPassword();
@@ -754,21 +752,59 @@ public class SendPanel extends JPanel {
                 }
                 signKeys.add(sk);
                 signPassphrases.add(passphrase);
+                hashAlgos.add(mapHashAlgo((String) sp.hashCombo.getSelectedItem()));
+            }
+            if (signKeys.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Select at least one private key to sign.",
+                        "Error", JOptionPane.WARNING_MESSAGE);
+                return;
             }
         }
 
-        try {
-            int symAlgo = isCompress ? 0 : mapEncAlgo((String) encAlgoCombo.getSelectedItem());
-            int compAlgo = mapCompAlgo((String) compAlgoCombo.getSelectedItem());
-            int hashAlgo = mapHashAlgo((String) hashAlgoCombo.getSelectedItem());
+        // Collect per-layer info on EDT
+        final int compAlgo = mapCompAlgo((String) compAlgoCombo.getSelectedItem());
+        final java.util.List<java.util.List<PGPPublicKey>> fEncKeyLayers;
+        final java.util.List<char[]> fPasswordLayers;
+        final java.util.List<Boolean> fLayerIsPassword;
+        final java.util.List<Integer> fLayerAlgos;
+        if (encEnabled) {
+            fEncKeyLayers = new java.util.ArrayList<>();
+            fPasswordLayers = new java.util.ArrayList<>();
+            fLayerIsPassword = new java.util.ArrayList<>();
+            fLayerAlgos = new java.util.ArrayList<>();
+            for (EncryptLayerPanel layer : encLayers) {
+                String algoName = (String) layer.algoCombo.getSelectedItem();
+                int symAlgo = mapEncAlgo(algoName);
+                fLayerAlgos.add(symAlgo);
+                boolean isPw = layer.usePasswordCheckBox.isSelected();
+                fLayerIsPassword.add(isPw);
+                if (isPw) {
+                    fEncKeyLayers.add(null);
+                    fPasswordLayers.add(layer.passwordField.getPassword());
+                } else {
+                    java.util.List<PGPKeyInfo> selected = layer.keyPanel.getSelectedKeys();
+                    java.util.List<PGPPublicKey> keys = new java.util.ArrayList<>();
+                    for (PGPKeyInfo ki : selected) {
+                        if (ki.canEncrypt()) keys.add(ki.getBcKey(PGPPublicKey.class));
+                    }
+                    fEncKeyLayers.add(keys);
+                    fPasswordLayers.add(null);
+                }
+            }
+        } else {
+            fEncKeyLayers = null;
+            fPasswordLayers = null;
+            fLayerIsPassword = null;
+            fLayerAlgos = null;
+        }
 
-            final String fMode = mode;
+        try {
             final String fPlainText = plainText;
             final boolean fHasAttachments = hasAttachments;
-            final List<PGPPublicKey> fEncKeys = encKeys;
-            final char[] fMessagePassword = messagePassword;
+            final boolean fEncEnabled = encEnabled;
             final List<PGPSecretKey> fSignKeys = signKeys;
             final List<char[]> fSignPassphrases = signPassphrases;
+            final List<Integer> fHashAlgos = hashAlgos;
 
             Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
             ProgressDialog progress = new ProgressDialog(owner, "Encrypting...");
@@ -776,10 +812,12 @@ public class SendPanel extends JPanel {
             SwingWorker<Void, Void> worker = new SwingWorker<>() {
                 @Override
                 protected Void doInBackground() throws Exception {
+                    String fileName;
+                    byte[] data;
+                    boolean armor;
                     if (fHasAttachments) {
                         boolean rawFile = fPlainText.isEmpty() && attachmentFiles.size() == 1;
-                        String fileName = rawFile ? attachmentFiles.get(0).getName() : "_CONSOLE";
-                        byte[] data;
+                        fileName = rawFile ? attachmentFiles.get(0).getName() : "_CONSOLE";
                         if (rawFile) {
                             data = Files.readAllBytes(attachmentFiles.get(0).toPath());
                         } else {
@@ -789,16 +827,56 @@ public class SendPanel extends JPanel {
                             }
                             data = CompoundCodec.encode(new CompoundMessage(fPlainText, atts));
                         }
-                        boolean armor = armorCheckBox.isSelected();
-                        byte[] encrypted = encryptWithMode(fMode, data, fileName, fEncKeys, fMessagePassword,
-                                fSignKeys, fSignPassphrases, symAlgo, compAlgo, hashAlgo, armor, progress);
+                        armor = armorCheckBox.isSelected();
+                    } else {
+                        fileName = "_CONSOLE";
+                        data = fPlainText.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                        armor = true;
+                    }
+
+                    byte[] encrypted;
+                    if (!fEncEnabled) {
+                        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+                        engine.encryptCompress(data, fileName, bOut,
+                                fSignKeys, fSignPassphrases, compAlgo, fHashAlgos, armor, progress);
+                        encrypted = bOut.toByteArray();
+                    } else {
+                        encrypted = data;
+                        boolean firstLayer = true;
+                        for (int i = 0; i < fLayerIsPassword.size(); i++) {
+                            boolean lastLayer = (i == fLayerIsPassword.size() - 1);
+                            int layerSymAlgo = fLayerAlgos.get(i);
+                            boolean isPw = fLayerIsPassword.get(i);
+                            ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+                            if (firstLayer) {
+                                if (isPw) {
+                                    engine.encryptPassword(encrypted, fileName, bOut, fPasswordLayers.get(i),
+                                            fSignKeys, fSignPassphrases, layerSymAlgo, compAlgo, fHashAlgos,
+                                            lastLayer && armor, progress);
+                                } else {
+                                    engine.encrypt(encrypted, fileName, bOut, fEncKeyLayers.get(i),
+                                            fSignKeys, fSignPassphrases, layerSymAlgo, compAlgo, fHashAlgos,
+                                            lastLayer && armor, progress);
+                                }
+                            } else {
+                                if (isPw) {
+                                    engine.encryptRawPassword(encrypted, bOut, fPasswordLayers.get(i),
+                                            layerSymAlgo, lastLayer && armor, progress);
+                                } else {
+                                    engine.encryptRaw(encrypted, bOut, fEncKeyLayers.get(i),
+                                            layerSymAlgo, lastLayer && armor, progress);
+                                }
+                            }
+                            encrypted = bOut.toByteArray();
+                            firstLayer = false;
+                        }
+                    }
+
+                    if (fHasAttachments) {
                         Files.write(new File(outputFileField.getText().trim()).toPath(), encrypted);
                     } else {
-                        String result = encryptWithModeText(fPlainText, fEncKeys, fMessagePassword,
-                                fSignKeys, fSignPassphrases, symAlgo, compAlgo, hashAlgo, progress);
-                        if (result != null) {
-                            SwingUtilities.invokeLater(() -> cipherTextArea.setText(result));
-                        }
+                        String resultStr = new String(encrypted, java.nio.charset.StandardCharsets.UTF_8);
+                        SwingUtilities.invokeLater(() -> cipherTextArea.setText(resultStr));
                     }
                     return null;
                 }
@@ -822,9 +900,9 @@ public class SendPanel extends JPanel {
                             JOptionPane.showMessageDialog(SendPanel.this,
                                     "Error during encryption:\n" + cause.getMessage(),
                                     "Error", JOptionPane.ERROR_MESSAGE);
-                        }
-                    }
-                }
+            }
+        }
+    }
             };
             worker.execute();
             progress.setVisible(true);
@@ -841,69 +919,510 @@ public class SendPanel extends JPanel {
         }
     }
 
-    private byte[] encryptWithMode(String mode, byte[] data, String fileName,
-                                    List<PGPPublicKey> encKeys, char[] messagePassword,
-                                    List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
-                                    int symAlgo, int compAlgo, int hashAlgo,
-                                    boolean armor) throws Exception {
-        return encryptWithMode(mode, data, fileName, encKeys, messagePassword,
-                signKeys, signPassphrases, symAlgo, compAlgo, hashAlgo, armor, null);
-    }
+    private class EncryptLayerPanel extends JPanel {
+        final JCheckBox usePasswordCheckBox;
+        final JPasswordField passwordField;
+        final JPasswordField verifyField;
+        final JCheckBox showPasswordCheckBox;
+        final JLabel matchLabel;
+        final KeyTreePanel keyPanel;
+        final JComboBox<String> algoCombo;
+        final CardLayout cardLayout;
+        final JPanel cardsPanel;
+        final List<String> keyringPaths = new ArrayList<>();
 
-    private byte[] encryptWithMode(String mode, byte[] data, String fileName,
-                                    List<PGPPublicKey> encKeys, char[] messagePassword,
-                                    List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
-                                    int symAlgo, int compAlgo, int hashAlgo,
-                                    boolean armor,
-                                    ProgressCallback progress) throws Exception {
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-        switch (mode) {
-            case "Password":
-                engine.encryptPassword(data, fileName, bOut, messagePassword,
-                        signKeys, signPassphrases, symAlgo, compAlgo, hashAlgo, armor, progress);
-                break;
-            case "Compress":
-                engine.encryptCompress(data, fileName, bOut,
-                        signKeys, signPassphrases, compAlgo, hashAlgo, armor, progress);
-                break;
-            default:
-                engine.encrypt(data, fileName, bOut, encKeys, signKeys, signPassphrases,
-                        symAlgo, compAlgo, hashAlgo, armor, progress);
-                break;
+        EncryptLayerPanel() {
+            super(new BorderLayout(0, 2));
+
+            usePasswordCheckBox = new JCheckBox("Use password");
+            algoCombo = new JComboBox<>(new String[]{"AES-128", "AES-192", "AES-256", "CAST5", "Blowfish", "Triple-DES", "Twofish"});
+            algoCombo.setSelectedItem("AES-128");
+
+            // Password card — aligned top, aligned labels/fields
+            JPanel passwordCard = new JPanel(new BorderLayout());
+            JPanel pwRows = new JPanel(new GridBagLayout());
+            GridBagConstraints g = new GridBagConstraints();
+            g.insets = new Insets(1, 4, 1, 4);
+            g.gridx = 0; g.anchor = GridBagConstraints.EAST;
+            pwRows.add(new JLabel("Password:"), g);
+            g.gridx = 1; g.anchor = GridBagConstraints.WEST; g.fill = GridBagConstraints.HORIZONTAL; g.weightx = 1;
+            passwordField = new JPasswordField(20);
+            pwRows.add(passwordField, g);
+            g.gridy = 1; g.gridx = 0; g.weightx = 0; g.fill = GridBagConstraints.NONE; g.anchor = GridBagConstraints.EAST;
+            pwRows.add(new JLabel("Verify:"), g);
+            g.gridx = 1; g.anchor = GridBagConstraints.WEST; g.fill = GridBagConstraints.HORIZONTAL;
+            verifyField = new JPasswordField(20);
+            pwRows.add(verifyField, g);
+            g.gridy = 2; g.gridx = 0; g.gridwidth = 2; g.anchor = GridBagConstraints.WEST; g.fill = GridBagConstraints.NONE;
+            showPasswordCheckBox = new JCheckBox("Show password");
+            pwRows.add(showPasswordCheckBox, g);
+            g.gridy = 3;
+            matchLabel = new JLabel(" ");
+            matchLabel.setFont(matchLabel.getFont().deriveFont(Font.PLAIN));
+            pwRows.add(matchLabel, g);
+            passwordCard.add(pwRows, BorderLayout.NORTH);
+
+            // Public key card
+            keyPanel = new KeyTreePanel("Recipient Public Key (Encrypt)", true, false);
+            JPanel keyCard = new JPanel(new BorderLayout());
+            keyCard.add(keyPanel, BorderLayout.CENTER);
+
+            // CardLayout
+            cardLayout = new CardLayout();
+            cardsPanel = new JPanel(cardLayout);
+            cardsPanel.add(passwordCard, "password");
+            cardsPanel.add(keyCard, "publickey");
+            cardLayout.show(cardsPanel, "publickey");
+
+            // Top row
+            JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+            topRow.add(usePasswordCheckBox);
+            topRow.add(new JLabel("Algo:"));
+            topRow.add(algoCombo);
+            add(topRow, BorderLayout.NORTH);
+            add(cardsPanel, BorderLayout.CENTER);
+
+            usePasswordCheckBox.addActionListener(e -> {
+                boolean pwMode = usePasswordCheckBox.isSelected();
+                cardLayout.show(cardsPanel, pwMode ? "password" : "publickey");
+                updateEncryptButton();
+                updateActiveEncLayer();
+            });
+
+            showPasswordCheckBox.addActionListener(e -> {
+                char echo = showPasswordCheckBox.isSelected() ? (char) 0 : '\u2022';
+                passwordField.setEchoChar(echo);
+                verifyField.setEchoChar(echo);
+            });
+
+            DocumentListener docListener = new DocumentListener() {
+                private void upd() { updateEncryptButton(); updateMatchLabel(); }
+                @Override public void insertUpdate(DocumentEvent e) { upd(); }
+                @Override public void removeUpdate(DocumentEvent e) { upd(); }
+                @Override public void changedUpdate(DocumentEvent e) { upd(); }
+            };
+            passwordField.getDocument().addDocumentListener(docListener);
+            verifyField.getDocument().addDocumentListener(docListener);
+
+            // Initial match state
+            updateMatchLabel();
+
+            keyPanel.addSelectionListener(e -> updateEncryptButton());
+            keyPanel.addViewModeListener(active -> {
+                updateFilterField();
+                updateShowViewButton();
+            });
         }
-        return bOut.toByteArray();
+
+        void loadKeyring(File file) {
+            try {
+                KeyBundle bundle = KeyringLoader.loadPublicKeys(file);
+                keyPanel.setKeys(null);
+                keyPanel.resetKeyringCount();
+                keyPanel.setKeys(bundle.getKeys());
+                keyPanel.setSourceFile(file.getAbsolutePath());
+                keyringPaths.clear();
+                keyringPaths.add(file.getAbsolutePath());
+                userFilterField.setText("");
+                updateFilterField();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(SendPanel.this,
+                    "Error loading public key:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            }
+            updateEncryptButton();
+            updateShowViewButton();
+        }
+
+        void addKeyring(File file) {
+            try {
+                KeyBundle bundle = KeyringLoader.loadPublicKeys(file);
+                keyPanel.addKeys(bundle.getKeys());
+                keyPanel.incrementKeyringCount();
+                keyringPaths.add(file.getAbsolutePath());
+                updateFilterField();
+                updateEncryptButton();
+                updateShowViewButton();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(SendPanel.this,
+                    "Error loading public key:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+
+        void updateMatchLabel() {
+            char[] pw = passwordField.getPassword();
+            char[] vw = verifyField.getPassword();
+            boolean bothEmpty = (pw == null || pw.length == 0) && (vw == null || vw.length == 0);
+            boolean match = java.util.Arrays.equals(pw, vw);
+            if (bothEmpty) {
+                matchLabel.setText(" ");
+                matchLabel.setForeground(UIManager.getColor("Label.foreground"));
+            } else if (match) {
+                matchLabel.setText("\u2713 Passwords match");
+                matchLabel.setForeground(new Color(0x009600));
+            } else {
+                matchLabel.setText("\u2717 Passwords do not match");
+                matchLabel.setForeground(new Color(0xCC0000));
+            }
+        }
     }
 
-    private String encryptWithModeText(String plainText,
-                                        List<PGPPublicKey> encKeys, char[] messagePassword,
-                                        List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
-                                        int symAlgo, int compAlgo, int hashAlgo) throws Exception {
-        return encryptWithModeText(plainText, encKeys, messagePassword,
-                signKeys, signPassphrases, symAlgo, compAlgo, hashAlgo, null);
+    private void addEncryptLayer() {
+        addEncryptLayer("AES-128");
     }
 
-    private String encryptWithModeText(String plainText,
-                                        List<PGPPublicKey> encKeys, char[] messagePassword,
-                                        List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
-                                        int symAlgo, int compAlgo, int hashAlgo,
-                                        ProgressCallback progress) throws Exception {
-        byte[] data = plainText.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        byte[] result = encryptWithMode(
-                (String) encModeCombo.getSelectedItem(),
-                data, "_CONSOLE", encKeys, messagePassword,
-                signKeys, signPassphrases, symAlgo, compAlgo, hashAlgo, true, progress);
-        return new String(result, java.nio.charset.StandardCharsets.UTF_8);
+    private void addEncryptLayer(String initialAlgo) {
+        suppressEncLayerTabListener++;
+        try {
+            EncryptLayerPanel layer = new EncryptLayerPanel();
+            layer.algoCombo.setSelectedItem(initialAlgo);
+            encLayers.add(layer);
+            int insertIdx = advancedMode
+                    ? encLayerTabs.getTabCount() - 1
+                    : encLayerTabs.getTabCount();
+            if (advancedMode) {
+                encLayerTabs.insertTab(null, null, layer, null, insertIdx);
+            } else {
+                encLayerTabs.addTab(null, layer);
+            }
+            encLayerTabs.setSelectedIndex(insertIdx);
+            refreshEncLayerTabComponents();
+            updateActiveEncLayer();
+            layer.keyPanel.getLoadButton().addActionListener(e -> loadEncKeyring(layer));
+            layer.keyPanel.getAddButton().addActionListener(e -> addEncKeyring(layer));
+            layer.keyPanel.setAddButtonVisible(true);
+            layer.keyPanel.getClearButton();
+            layer.keyPanel.setOnClearCallback(() -> {
+                layer.keyPanel.setKeys(null);
+                layer.keyPanel.setSourceFile(null);
+                layer.keyringPaths.clear();
+                updateEncryptButton();
+            });
+            setupEncLayerDrop(layer.keyPanel, layer);
+            layer.keyPanel.getLoadButton().setTransferHandler(
+                UIUtils.createKeyringDropHandler(f -> layer.loadKeyring(f)));
+            layer.keyPanel.getAddButton().setTransferHandler(
+                UIUtils.createKeyringDropHandler(f -> layer.addKeyring(f)));
+        } finally {
+            suppressEncLayerTabListener--;
+        }
     }
 
-    private String resolveSignKeyUserId(PGPKeyInfo key) {
+    private void removeEncryptLayer(EncryptLayerPanel layer) {
+        if (encLayers.size() <= 1) return;
+        suppressEncLayerTabListener++;
+        try {
+            int listIdx = encLayers.indexOf(layer);
+            if (listIdx < 0) return;
+            encLayers.remove(listIdx);
+            encLayerTabs.removeTabAt(listIdx);
+            if (encLayerTabs.getSelectedIndex() == encLayerTabs.getTabCount() - 1
+                    && encLayerTabs.getSelectedIndex() > 0) {
+                encLayerTabs.setSelectedIndex(encLayerTabs.getSelectedIndex() - 1);
+            }
+            refreshEncLayerTabComponents();
+            updateActiveEncLayer();
+            updateEncryptButton();
+        } finally {
+            suppressEncLayerTabListener--;
+        }
+    }
+
+    private void refreshEncLayerTabComponents() {
+        int n = encLayers.size();
+        for (int i = 0; i < n; i++) {
+            if (advancedMode) {
+                JPanel comp = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+                comp.setOpaque(false);
+                comp.add(new JLabel("Encrypt " + (i + 1)));
+                if (n > 1) {
+                    JButton closeBtn = new JButton("\u00D7");
+                    closeBtn.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                    closeBtn.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 2));
+                    closeBtn.setContentAreaFilled(false);
+                    closeBtn.setFocusable(false);
+                    closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    EncryptLayerPanel layer = encLayers.get(i);
+                    closeBtn.addActionListener(ev -> removeEncryptLayer(layer));
+                    comp.add(closeBtn);
+                }
+                encLayerTabs.setTabComponentAt(i, comp);
+            } else {
+                encLayerTabs.setTitleAt(i, " ");
+                encLayerTabs.setTabComponentAt(i, null);
+            }
+        }
+        if (advancedMode && encLayerTabs.getTabCount() > 0) {
+            encLayerTabs.setTitleAt(encLayerTabs.getTabCount() - 1, "+");
+            encLayerTabs.setTabComponentAt(encLayerTabs.getTabCount() - 1, null);
+        }
+    }
+
+    private void updateActiveEncLayer() {
+        int idx = encLayerTabs.getSelectedIndex();
+        if (idx >= 0 && idx < encLayers.size()) {
+            EncryptLayerPanel layer = encLayers.get(idx);
+            if (layer.usePasswordCheckBox.isSelected()) {
+                activeEncKeyPanel = null;
+                userFilterField.setEnabled(false);
+                clearSelButton.setEnabled(false);
+                showViewBtn.setEnabled(false);
+                return;
+            }
+            activeEncKeyPanel = layer.keyPanel;
+        } else {
+            activeEncKeyPanel = null;
+            updateFilterField();
+            updateShowViewButton();
+            return;
+        }
+        updateFilterField();
+        updateShowViewButton();
+    }
+
+    private void loadEncKeyring(EncryptLayerPanel layer) {
+        JFileChooser fc = createPublicFileChooser();
+        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
+            layer.loadKeyring(fc.getSelectedFile());
+    }
+
+    private void addEncKeyring(EncryptLayerPanel layer) {
+        JFileChooser fc = createPublicFileChooser();
+        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
+            layer.addKeyring(fc.getSelectedFile());
+    }
+
+    private void setupEncLayerDrop(KeyTreePanel panel, EncryptLayerPanel layer) {
+        panel.setTransferHandler(new TransferHandler() {
+            @Override public boolean canImport(TransferSupport support) {
+                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+            }
+            @Override public boolean importData(TransferSupport support) {
+                if (!canImport(support)) return false;
+                try {
+                    java.util.List<File> files = (java.util.List<File>) support.getTransferable()
+                            .getTransferData(DataFlavor.javaFileListFlavor);
+                    if (support.isDrop() && support.getDropAction() == MOVE)
+                        layer.addKeyring(files.get(0));
+                    else
+                        layer.loadKeyring(files.get(0));
+                    return true;
+                } catch (Exception ex) { return false; }
+            }
+        });
+    }
+
+    private class SignerPanel extends JPanel {
+        final KeyTreePanel keyPanel;
+        final JComboBox<String> hashCombo;
+        String keyringPath;
+
+        SignerPanel() {
+            super(new BorderLayout(0, 2));
+            keyPanel = new KeyTreePanel("Sender Private Key (Signature)", false, true);
+            hashCombo = new JComboBox<>(new String[]{"SHA-256", "SHA-384", "SHA-512", "RIPEMD160"});
+            hashCombo.setSelectedItem("SHA-256");
+            hashCombo.setEnabled(false);
+
+            JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+            topRow.add(new JLabel("Hash:"));
+            topRow.add(hashCombo);
+            add(topRow, BorderLayout.NORTH);
+            add(keyPanel, BorderLayout.CENTER);
+
+            keyPanel.addSelectionListener(e -> {
+                boolean hasSigning = keyPanel.getSelectedKeys().stream()
+                    .anyMatch(PGPKeyInfo::canSign);
+                hashCombo.setEnabled(hasSigning);
+                updateSignCheckbox();
+            });
+        }
+
+        void loadKeyring(File file) {
+            try {
+                KeyBundle bundle = KeyringLoader.loadSecretKeys(file);
+                keyPanel.setKeys(bundle.getKeys());
+                keyPanel.setSourceFile(file.getAbsolutePath());
+                keyringPath = file.getAbsolutePath();
+                keyPanel.selectDefaultIfEmpty();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(SendPanel.this,
+                    "Error loading private key:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            }
+            updateSignCheckbox();
+        }
+    }
+
+    private void addSignerTab() {
+        addSignerTab("SHA-256");
+    }
+
+    private void addSignerTab(String initialHash) {
+        suppressTabListener++;
+        try {
+            SignerPanel sp = new SignerPanel();
+            sp.hashCombo.setSelectedItem(initialHash);
+            sp.keyPanel.setAutoSelectEnabled(signerPanels.isEmpty());
+            signerPanels.add(sp);
+            int insertIdx = advancedMode
+                    ? signerTabs.getTabCount() - 1
+                    : signerTabs.getTabCount();
+            if (advancedMode) {
+                signerTabs.insertTab(null, null, sp, null, insertIdx);
+            } else {
+                signerTabs.addTab(null, sp);
+            }
+            signerTabs.setSelectedIndex(insertIdx);
+            refreshTabComponents();
+            sp.keyPanel.getLoadButton().addActionListener(e -> loadPrivateKeyring(sp));
+            sp.keyPanel.getClearButton();
+            sp.keyPanel.setOnClearCallback(() -> {
+                sp.keyPanel.setKeys(null);
+                sp.keyPanel.setSourceFile(null);
+                sp.keyringPath = null;
+                updateSignCheckbox();
+            });
+            setupSignerDrop(sp.keyPanel, sp);
+            sp.keyPanel.getLoadButton().setTransferHandler(
+                UIUtils.createKeyringDropHandler(f -> sp.loadKeyring(f)));
+        } finally {
+            suppressTabListener--;
+        }
+    }
+
+    private void refreshTabComponents() {
+        int n = signerPanels.size();
+        for (int i = 0; i < n; i++) {
+            if (advancedMode) {
+                JPanel comp = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+                comp.setOpaque(false);
+                comp.add(new JLabel("Signer " + (i + 1)));
+                if (n > 1) {
+                    JButton closeBtn = new JButton("\u00D7");
+                    closeBtn.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                    closeBtn.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 2));
+                    closeBtn.setContentAreaFilled(false);
+                    closeBtn.setFocusable(false);
+                    closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    SignerPanel sp = signerPanels.get(i);
+                    closeBtn.addActionListener(ev -> removeSignerTab(sp));
+                    comp.add(closeBtn);
+                }
+                signerTabs.setTabComponentAt(i, comp);
+            } else {
+                signerTabs.setTitleAt(i, " ");
+                signerTabs.setTabComponentAt(i, null);
+            }
+        }
+        if (advancedMode && signerTabs.getTabCount() > 0) {
+            signerTabs.setTitleAt(signerTabs.getTabCount() - 1, "+");
+            signerTabs.setTabComponentAt(signerTabs.getTabCount() - 1, null);
+        }
+    }
+
+    private void removeSignerTab(SignerPanel sp) {
+        if (signerPanels.size() <= 1) return;
+        suppressTabListener++;
+        try {
+            int listIdx = signerPanels.indexOf(sp);
+            if (listIdx < 0) return;
+            signerPanels.remove(listIdx);
+            signerTabs.removeTabAt(listIdx);
+            if (signerTabs.getSelectedIndex() == signerTabs.getTabCount() - 1
+                    && signerTabs.getSelectedIndex() > 0) {
+                signerTabs.setSelectedIndex(signerTabs.getSelectedIndex() - 1);
+            }
+            refreshTabComponents();
+            updateSignCheckbox();
+        } finally {
+            suppressTabListener--;
+        }
+    }
+
+    private void loadPrivateKeyring(SignerPanel sp) {
+        JFileChooser fc = createSecretFileChooser();
+        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
+            sp.loadKeyring(fc.getSelectedFile());
+    }
+
+    private void setupSignerDrop(KeyTreePanel panel, SignerPanel sp) {
+        panel.setTransferHandler(new TransferHandler() {
+            @Override public boolean canImport(TransferSupport support) {
+                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+            }
+            @Override public boolean importData(TransferSupport support) {
+                if (!canImport(support)) return false;
+                try {
+                    java.util.List<File> files = (java.util.List<File>) support.getTransferable()
+                            .getTransferData(DataFlavor.javaFileListFlavor);
+                    sp.loadKeyring(files.get(0));
+                    return true;
+                } catch (Exception ex) { return false; }
+            }
+        });
+    }
+
+    private String resolveSignKeyUserId(PGPKeyInfo key, SignerPanel sp) {
         String uid = key.getUserId();
         if (uid != null) return uid;
-        for (PGPKeyInfo master : privateKeyPanel.getAllKeys()) {
+        java.util.List<PGPKeyInfo> allKeys = sp.keyPanel.getAllKeys();
+        if (allKeys == null) return null;
+        for (PGPKeyInfo master : allKeys) {
             for (PGPKeyInfo sub : master.getSubKeys()) {
                 if (sub.getKeyId() == key.getKeyId()) return master.getUserId();
             }
         }
         return null;
+    }
+
+    private void setEncLayersEnabled(boolean enabled) {
+        for (EncryptLayerPanel layer : encLayers) {
+            setRecursiveEnabled(layer, enabled);
+        }
+        encLayerTabs.setEnabled(enabled);
+        if (enabled) {
+            for (EncryptLayerPanel layer : encLayers)
+                layer.keyPanel.refreshClearButtonState();
+        }
+    }
+
+    private void setSignersEnabled(boolean enabled) {
+        for (SignerPanel sp : signerPanels) {
+            setRecursiveEnabled(sp, enabled);
+        }
+        signerTabs.setEnabled(enabled);
+        if (enabled) {
+            for (SignerPanel sp : signerPanels)
+                sp.keyPanel.refreshClearButtonState();
+        }
+    }
+
+    private void setRecursiveEnabled(Container c, boolean enabled) {
+        for (Component child : c.getComponents()) {
+            child.setEnabled(enabled);
+            if (child instanceof Container) {
+                setRecursiveEnabled((Container) child, enabled);
+            }
+        }
+    }
+
+    private static void hideTabArea(JTabbedPane pane) {
+        pane.setUI(new javax.swing.plaf.basic.BasicTabbedPaneUI() {
+            @Override
+            protected int calculateTabAreaHeight(int tabPlacement, int runCount, int maxTabHeight) {
+                return 0;
+            }
+            @Override
+            protected int calculateTabAreaWidth(int tabPlacement, int runCount, int maxTabWidth) {
+                return 0;
+            }
+            @Override
+            protected Insets getTabAreaInsets(int tabPlacement) {
+                return new Insets(0, 0, 0, 0);
+            }
+        });
     }
 
 

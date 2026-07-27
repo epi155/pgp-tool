@@ -72,10 +72,22 @@ public class ReceivePanel extends JPanel {
         plainTextArea = new JTextArea(10, 40);
         verificationArea = new JEditorPane("text/html", "");
         encryptionMetadataArea = new JEditorPane("text/html", "");
-        Dimension minSize = new Dimension(0, 50);
-        verificationArea.setPreferredSize(minSize);
-        encryptionMetadataArea.setPreferredSize(minSize);
-        decryptButton = new JButton("Decrypt");
+        decryptButton = new JButton("Decrypt") {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                GradientPaint gp = new GradientPaint(
+                        0, 0, Color.decode("#FFD700"), 0, getHeight(), Color.decode("#DAA520"));
+                g2.setPaint(gp);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        decryptButton.setContentAreaFilled(false);
+        decryptButton.setOpaque(false);
+        decryptButton.setForeground(Color.BLUE);
+        decryptButton.setFont(decryptButton.getFont().deriveFont(Font.BOLD));
         decryptButton.setEnabled(false);
 
         Font mono = new Font("Monospaced", Font.PLAIN, 12);
@@ -237,7 +249,24 @@ public class ReceivePanel extends JPanel {
         centerLeftPanel.add(buttonPanel, BorderLayout.NORTH);
         centerLeftPanel.add(wrapInScroll(verificationArea, "Verify Signature"), BorderLayout.CENTER);
 
-        JPanel centerRow = new JPanel(new GridLayout(1, 2, 5, 5));
+        JPanel centerRow = new JPanel(new GridLayout(1, 2, 5, 5)) {
+            private final int fixedRowHeight = 105;
+            @Override public Dimension getPreferredSize() {
+                Dimension d = super.getPreferredSize();
+                d.height = fixedRowHeight;
+                return d;
+            }
+            @Override public Dimension getMinimumSize() {
+                Dimension d = super.getMinimumSize();
+                d.height = fixedRowHeight;
+                return d;
+            }
+            @Override public Dimension getMaximumSize() {
+                Dimension d = super.getMaximumSize();
+                d.height = fixedRowHeight;
+                return d;
+            }
+        };
         centerRow.add(centerLeftPanel);
         JScrollPane metaScroll = wrapInScroll(encryptionMetadataArea, "PGP Metadata");
         metaScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
@@ -349,8 +378,6 @@ public class ReceivePanel extends JPanel {
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Error loading public keys:\n" + ex.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
-            publicKeyBundle = null;
-            publicKeyPanel.setKeys(null);
         }
         updateDecryptButton();
         updateShowUsedButton();
@@ -400,8 +427,6 @@ public class ReceivePanel extends JPanel {
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Error loading private keys:\n" + ex.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
-            privateKeyBundle = null;
-            privateKeyPanel.setKeys(null);
         }
         updateDecryptButton();
         updateShowUsedButton();
@@ -560,36 +585,12 @@ public class ReceivePanel extends JPanel {
             }
         }
 
-        // Pre-scan: count PBE layers
-        int pbeCount = 0;
-        try {
-            pbeCount = engine.countPBELayers(cipherData);
-        } catch (Exception ex) {
-            // ignore — treat as 0 PBE layers
-        }
-
         // Pre-scan: collect recipient key IDs from the outermost layer
         Set<Long> allMsgKeyIds = new HashSet<>();
         try {
             allMsgKeyIds = engine.getAllRecipientKeyIdsRecursive(cipherData);
         } catch (Exception ex) {
             // ignore — treat as no recipient keys
-        }
-
-        // Collect PBE passwords upfront
-        List<char[]> pbePasswords = new ArrayList<>();
-        for (int i = 0; i < pbeCount; i++) {
-            String title = (pbeCount > 1)
-                    ? "Enter encryption password (" + (i + 1) + "/" + pbeCount + ")"
-                    : "Enter encryption password";
-            PasswordDialog dlg = new PasswordDialog(
-                    (Frame) SwingUtilities.getWindowAncestor(this),
-                    "password encrypted layer",
-                    PasswordDialog.Mode.REQUEST, title);
-            dlg.setVisible(true);
-            char[] pwd = dlg.getPassword();
-            if (pwd == null) return;
-            pbePasswords.add(pwd);
         }
 
         // Match keys — check at least one is available
@@ -644,21 +645,42 @@ public class ReceivePanel extends JPanel {
             }
         });
 
+        // Setup password provider — called from background thread when engine
+        // encounters a PBE layer (including nested/hybrid layers)
+        engine.setPasswordProvider(layerIndex -> {
+            try {
+                final char[][] result = new char[1][];
+                SwingUtilities.invokeAndWait(() -> {
+                    PasswordDialog dlg = new PasswordDialog(owner,
+                            "Encrypted layer #" + layerIndex + ": Password-based",
+                            "",
+                            PasswordDialog.Mode.REQUEST);
+                    dlg.setTitle("Encryption password");
+                    dlg.setVisible(true);
+                    result[0] = dlg.getPassword();
+                });
+                return result[0];
+            } catch (Exception ex) {
+                return null;
+            }
+        });
+
         // Unified decrypt
-        String progressTitle = (pbeCount > 0 || !allMsgKeyIds.isEmpty()) ? "Decrypting..." : "Decompressing...";
-        ProgressDialog progress = new ProgressDialog(owner, progressTitle);
+        boolean hasEncryption = !allMsgKeyIds.isEmpty();
+        ProgressDialog progress = new ProgressDialog(owner, hasEncryption ? "Decrypting..." : "Decompressing...");
         boolean decodeText = !isBinary;
         SwingWorker<DecryptResult, Void> worker = new SwingWorker<>() {
             @Override
             protected DecryptResult doInBackground() throws Exception {
                 return engine.decryptNested(cipherData, secretKeys, publicKeys,
-                        publicKeyUserIdByKeyId, secretKeyUserIds, pbePasswords,
+                        publicKeyUserIdByKeyId, secretKeyUserIds, null,
                         progress, decodeText);
             }
             @Override
             protected void done() {
                 progress.dispose();
                 engine.setPassphraseProvider(null);
+                engine.setPasswordProvider(null);
                 try {
                     handleDecryptResult(get(), isBinary);
                 } catch (Exception ex) {

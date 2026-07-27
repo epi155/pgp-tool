@@ -9,6 +9,7 @@ import java.security.Security;
 public class PGPTool {
     public static void main(String[] args) {
         boolean showKeyTab = false;
+        boolean advanced = false;
         for (String arg : args) {
             switch (arg) {
                 case "-h":
@@ -18,6 +19,10 @@ public class PGPTool {
                 case "-k":
                 case "--key":
                     showKeyTab = true;
+                    break;
+                case "--advanced":
+                case "--expert":
+                    advanced = true;
                     break;
                 default:
                     System.err.println("Unknown option: " + arg);
@@ -33,8 +38,9 @@ public class PGPTool {
         } catch (Exception ignored) {}
 
         boolean keyTab = showKeyTab;
+        boolean adv = advanced;
         SwingUtilities.invokeLater(() -> {
-            MainFrame frame = new MainFrame(keyTab);
+            MainFrame frame = new MainFrame(keyTab, adv);
             frame.setVisible(true);
         });
     }
@@ -45,7 +51,9 @@ public class PGPTool {
         System.out.println("Usage: pgp-tool [OPTIONS]");
         System.out.println();
         System.out.println("Options:");
-        System.out.println("  -k, --key    Enable the Key generation tab");
-        System.out.println("  -h, --help   Show this help message and exit");
+        System.out.println("  -k, --key        Enable the Key generation tab");
+        System.out.println("  --advanced       Enable advanced multi-signer and multi-layer encryption");
+        System.out.println("  --expert         Same as --advanced");
+        System.out.println("  -h, --help       Show this help message and exit");
     }
 }

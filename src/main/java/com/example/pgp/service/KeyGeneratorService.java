@@ -12,6 +12,8 @@ import org.bouncycastle.openpgp.operator.PBESecretKeyDecryptor;
 import org.bouncycastle.openpgp.operator.PBESecretKeyEncryptor;
 import org.bouncycastle.openpgp.operator.PGPDigestCalculator;
 import org.bouncycastle.openpgp.operator.jcajce.*;
+import org.bouncycastle.openpgp.operator.bc.BcPBESecretKeyDecryptorBuilder;
+import org.bouncycastle.openpgp.operator.bc.BcPGPDigestCalculatorProvider;
 
 import java.security.*;
 import java.security.spec.ECGenParameterSpec;
@@ -54,9 +56,19 @@ public class KeyGeneratorService {
                 masterKeyPair.getPublicKey().getAlgorithm(), HashAlgorithmTags.SHA256)
                 .setProvider("BC");
 
-        JcePBESecretKeyEncryptorBuilder encBuilder = new JcePBESecretKeyEncryptorBuilder(
-                SymmetricKeyAlgorithmTags.AES_256).setProvider("BC");
-        PBESecretKeyEncryptor emptyEncryptor = encBuilder.build(new char[0]);
+        PBESecretKeyEncryptor emptyEncryptor = new PBESecretKeyEncryptor(
+                SymmetricKeyAlgorithmTags.NULL, (PGPDigestCalculator) null,
+                new SecureRandom(), new char[0]) {
+            @Override
+            public byte[] encryptKeyData(byte[] keyData, byte[] iv,
+                                          int alg, int s2kUsage) {
+                return keyData;
+            }
+            @Override
+            public byte[] getCipherIV() {
+                return null;
+            }
+        };
 
         PGPDigestCalculator sha1Calc = new JcaPGPDigestCalculatorProviderBuilder()
                 .setProvider("BC").build().get(HashAlgorithmTags.SHA1);
@@ -145,8 +157,8 @@ public class KeyGeneratorService {
     }
 
     public static PGPSecretKeyRing reEncrypt(PGPSecretKeyRing oldRing, char[] newPassphrase) throws Exception {
-        PBESecretKeyDecryptor oldDecryptor = new JcePBESecretKeyDecryptorBuilder()
-                .setProvider("BC").build(new char[0]);
+        PBESecretKeyDecryptor oldDecryptor = new BcPBESecretKeyDecryptorBuilder(
+                new BcPGPDigestCalculatorProvider()).build(new char[0]);
 
         JcePBESecretKeyEncryptorBuilder encBuilder = new JcePBESecretKeyEncryptorBuilder(
                 SymmetricKeyAlgorithmTags.AES_256).setProvider("BC");
