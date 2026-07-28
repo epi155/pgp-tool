@@ -7,6 +7,7 @@ import org.bouncycastle.bcpg.*;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
 import org.bouncycastle.openpgp.operator.PBEDataDecryptorFactory;
+import org.bouncycastle.openpgp.operator.PGPContentSignerBuilder;
 import org.bouncycastle.openpgp.operator.PublicKeyDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.jcajce.*;
 import org.bouncycastle.openpgp.operator.bc.BcPBESecretKeyDecryptorBuilder;
@@ -145,7 +146,7 @@ public class PGPEngine {
 
     private static int defaultHashForAlgo(int keyAlgorithm, int fallback) {
         if (keyAlgorithm == PublicKeyAlgorithmTags.Ed25519) return HashAlgorithmTags.SHA512;
-        if (keyAlgorithm == PublicKeyAlgorithmTags.Ed448) return HashAlgorithmTags.SHA512;
+        if (keyAlgorithm == PublicKeyAlgorithmTags.Ed448) return Ed448PGPContentSignerBuilder.SHAKE256;
         return fallback;
     }
 
@@ -167,9 +168,14 @@ public class PGPEngine {
                 int userHash = (hashAlgorithms != null && i < hashAlgorithms.size())
                     ? hashAlgorithms.get(i) : HashAlgorithmTags.SHA256;
                 int effectiveHash = defaultHashForAlgo(signPubKey.getAlgorithm(), userHash);
-                PGPSignatureGenerator sigGen = new PGPSignatureGenerator(
-                        new JcaPGPContentSignerBuilder(signPubKey.getAlgorithm(), effectiveHash)
-                                .setProvider("BC"));
+                PGPContentSignerBuilder csBuilder;
+                if (signPubKey.getAlgorithm() == PublicKeyAlgorithmTags.Ed448) {
+                    csBuilder = new Ed448PGPContentSignerBuilder(effectiveHash);
+                } else {
+                    csBuilder = new JcaPGPContentSignerBuilder(signPubKey.getAlgorithm(), effectiveHash)
+                            .setProvider("BC");
+                }
+                PGPSignatureGenerator sigGen = new PGPSignatureGenerator(csBuilder);
                 sigGen.init(PGPSignature.BINARY_DOCUMENT, signPrivateKey);
                 sigGen.generateOnePassVersion(false).encode(out);
                 sigGens.add(sigGen);
@@ -582,7 +588,7 @@ public class PGPEngine {
                         }
                     } catch (Exception ignored) {}
 
-                    ops.init(new JcaPGPContentVerifierBuilderProvider().setProvider("BC"), pubKey);
+                    ops.init(new Ed448PGPContentVerifierBuilderProvider(), pubKey);
                     ops.update(verifyData);
                     boolean verified = ops.verify(sig);
                     signerStatus = verified

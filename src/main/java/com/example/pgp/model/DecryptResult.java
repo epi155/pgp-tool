@@ -452,6 +452,7 @@ public class DecryptResult {
                 case 9: return "SHA-384";
                 case 10: return "SHA-512";
                 case 11: return "SHA-224";
+                case 27: return "SHAKE256";
                 default: return "Hash#" + algo;
             }
         }

@@ -10,6 +10,7 @@ import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.operator.PBESecretKeyDecryptor;
 import org.bouncycastle.openpgp.operator.PBESecretKeyEncryptor;
+import org.bouncycastle.openpgp.operator.PGPContentSignerBuilder;
 import org.bouncycastle.openpgp.operator.PGPDigestCalculator;
 import org.bouncycastle.openpgp.operator.jcajce.*;
 import org.bouncycastle.openpgp.operator.bc.BcPBESecretKeyDecryptorBuilder;
@@ -57,13 +58,18 @@ public class KeyGeneratorService {
                 || masterAlgoTag == PublicKeyAlgorithmTags.Ed25519)
             hashAlgo = HashAlgorithmTags.SHA512;
         else if (masterAlgoTag == PublicKeyAlgorithmTags.Ed448)
-            hashAlgo = HashAlgorithmTags.SHA512;
+            hashAlgo = Ed448PGPContentSignerBuilder.SHAKE256;
         else
             hashAlgo = HashAlgorithmTags.SHA256;
 
-        JcaPGPContentSignerBuilder signerBuilder = new JcaPGPContentSignerBuilder(
-                masterKeyPair.getPublicKey().getAlgorithm(), hashAlgo)
-                .setProvider("BC");
+        PGPContentSignerBuilder signerBuilder;
+        if (masterAlgoTag == PublicKeyAlgorithmTags.Ed448) {
+            signerBuilder = new Ed448PGPContentSignerBuilder(hashAlgo);
+        } else {
+            signerBuilder = new JcaPGPContentSignerBuilder(
+                    masterKeyPair.getPublicKey().getAlgorithm(), hashAlgo)
+                    .setProvider("BC");
+        }
 
         PBESecretKeyEncryptor emptyEncryptor = new PBESecretKeyEncryptor(
                 SymmetricKeyAlgorithmTags.NULL, (PGPDigestCalculator) null,
