@@ -57,7 +57,7 @@ public class KeyGeneratorService {
                 || masterAlgoTag == PublicKeyAlgorithmTags.Ed25519)
             hashAlgo = HashAlgorithmTags.SHA512;
         else if (masterAlgoTag == PublicKeyAlgorithmTags.Ed448)
-            hashAlgo = 27; // SHAKE256
+            hashAlgo = HashAlgorithmTags.SHA512;
         else
             hashAlgo = HashAlgorithmTags.SHA256;
 

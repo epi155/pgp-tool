@@ -143,11 +143,9 @@ public class PGPEngine {
 
     // ─── hash algorithm override per key type ─────────────────────
 
-    private static final int SHAKE256 = 27;
-
     private static int defaultHashForAlgo(int keyAlgorithm, int fallback) {
         if (keyAlgorithm == PublicKeyAlgorithmTags.Ed25519) return HashAlgorithmTags.SHA512;
-        if (keyAlgorithm == PublicKeyAlgorithmTags.Ed448) return SHAKE256;
+        if (keyAlgorithm == PublicKeyAlgorithmTags.Ed448) return HashAlgorithmTags.SHA512;
         return fallback;
     }
 
