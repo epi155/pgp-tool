@@ -1,6 +1,6 @@
-package com.example.pgp.ui;
+package io.github.epi155.pgp.ui;
 
-import com.example.pgp.model.PGPKeyInfo;
+import io.github.epi155.pgp.model.PGPKeyInfo;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -51,7 +51,8 @@ public final class UIUtils {
         return new TransferHandler() {
             @Override
             public boolean canImport(TransferSupport support) {
-                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+                return support.getComponent().isEnabled()
+                    && support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
             }
 
             @Override
@@ -69,7 +70,7 @@ public final class UIUtils {
         };
     }
 
-    public static void mergeKeyBundle(com.example.pgp.model.KeyBundle target, com.example.pgp.model.KeyBundle incoming) {
+    public static void mergeKeyBundle(io.github.epi155.pgp.model.KeyBundle target, io.github.epi155.pgp.model.KeyBundle incoming) {
         if (incoming == null || incoming.getKeys() == null) return;
         java.util.Set<Long> ids = new java.util.HashSet<>();
         for (PGPKeyInfo k : target.getKeys()) {

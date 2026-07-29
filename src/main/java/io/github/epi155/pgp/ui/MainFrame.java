@@ -1,6 +1,6 @@
-package com.example.pgp.ui;
+package io.github.epi155.pgp.ui;
 
-import com.example.pgp.service.PGPEngine;
+import io.github.epi155.pgp.service.PGPEngine;
 
 import javax.swing.*;
 import java.awt.*;

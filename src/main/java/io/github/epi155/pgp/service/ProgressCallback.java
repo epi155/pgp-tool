@@ -1,4 +1,4 @@
-package com.example.pgp.service;
+package io.github.epi155.pgp.service;
 
 @FunctionalInterface
 public interface ProgressCallback {

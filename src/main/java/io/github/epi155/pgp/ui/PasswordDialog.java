@@ -1,4 +1,4 @@
-package com.example.pgp.ui;
+package io.github.epi155.pgp.ui;
 
 import javax.swing.*;
 import java.awt.*;

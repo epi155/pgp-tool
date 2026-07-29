@@ -1,4 +1,4 @@
-package com.example.pgp.service;
+package io.github.epi155.pgp.service;
 
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.crypto.digests.SHAKEDigest;

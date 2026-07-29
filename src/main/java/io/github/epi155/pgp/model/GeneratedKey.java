@@ -1,4 +1,4 @@
-package com.example.pgp.model;
+package io.github.epi155.pgp.model;
 
 import org.bouncycastle.openpgp.PGPKeyPair;
 import org.bouncycastle.openpgp.PGPPublicKeyRing;

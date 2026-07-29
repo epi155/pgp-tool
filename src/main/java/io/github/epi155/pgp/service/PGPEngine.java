@@ -1,8 +1,8 @@
-package com.example.pgp.service;
+package io.github.epi155.pgp.service;
 
-import com.example.pgp.model.CompoundCodec;
-import com.example.pgp.model.CompoundMessage;
-import com.example.pgp.model.DecryptResult;
+import io.github.epi155.pgp.model.CompoundCodec;
+import io.github.epi155.pgp.model.CompoundMessage;
+import io.github.epi155.pgp.model.DecryptResult;
 import org.bouncycastle.bcpg.*;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;

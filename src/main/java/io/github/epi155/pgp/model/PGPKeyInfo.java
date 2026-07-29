@@ -1,4 +1,4 @@
-package com.example.pgp.model;
+package io.github.epi155.pgp.model;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;

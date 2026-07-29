@@ -1,6 +1,6 @@
-package com.example.pgp.ui;
+package io.github.epi155.pgp.ui;
 
-import com.example.pgp.model.PGPKeyInfo;
+import io.github.epi155.pgp.model.PGPKeyInfo;
 
 import javax.swing.*;
 import javax.swing.tree.*;

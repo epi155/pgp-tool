@@ -1,7 +1,7 @@
-package com.example.pgp.service;
+package io.github.epi155.pgp.service;
 
-import com.example.pgp.model.KeyBundle;
-import com.example.pgp.model.PGPKeyInfo;
+import io.github.epi155.pgp.model.KeyBundle;
+import io.github.epi155.pgp.model.PGPKeyInfo;
 import org.bouncycastle.bcpg.ArmoredInputStream;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.bcpg.sig.KeyFlags;

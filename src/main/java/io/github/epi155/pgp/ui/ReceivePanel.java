@@ -1,16 +1,16 @@
-package com.example.pgp.ui;
+package io.github.epi155.pgp.ui;
 
-import com.example.pgp.model.CompoundMessage;
-import com.example.pgp.model.DecryptResult;
-import com.example.pgp.model.KeyBundle;
-import com.example.pgp.model.PGPKeyInfo;
-import com.example.pgp.service.KeyringLoader;
-import com.example.pgp.service.PGPEngine;
-import com.example.pgp.service.ProgressCallback;
-import static com.example.pgp.ui.UIUtils.createPublicFileChooser;
-import static com.example.pgp.ui.UIUtils.createSecretFileChooser;
-import static com.example.pgp.ui.UIUtils.isBinaryContent;
-import static com.example.pgp.ui.UIUtils.wrapInScroll;
+import io.github.epi155.pgp.model.CompoundMessage;
+import io.github.epi155.pgp.model.DecryptResult;
+import io.github.epi155.pgp.model.KeyBundle;
+import io.github.epi155.pgp.model.PGPKeyInfo;
+import io.github.epi155.pgp.service.KeyringLoader;
+import io.github.epi155.pgp.service.PGPEngine;
+import io.github.epi155.pgp.service.ProgressCallback;
+import static io.github.epi155.pgp.ui.UIUtils.createPublicFileChooser;
+import static io.github.epi155.pgp.ui.UIUtils.createSecretFileChooser;
+import static io.github.epi155.pgp.ui.UIUtils.isBinaryContent;
+import static io.github.epi155.pgp.ui.UIUtils.wrapInScroll;
 import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPSecretKey;
 
@@ -466,7 +466,8 @@ public class ReceivePanel extends JPanel {
     private void setupKeyDrop(KeyTreePanel panel, boolean isPublic) {
         panel.setTransferHandler(new TransferHandler() {
             @Override public boolean canImport(TransferSupport support) {
-                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+                return support.getComponent().isEnabled()
+                    && support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
             }
             @Override public boolean importData(TransferSupport support) {
                 if (!canImport(support)) return false;

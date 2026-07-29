@@ -1,10 +1,10 @@
-package com.example.pgp.ui;
+package io.github.epi155.pgp.ui;
 
-import com.example.pgp.model.GeneratedKey;
-import com.example.pgp.model.KeyConfig;
-import com.example.pgp.model.PGPKeyInfo;
-import com.example.pgp.service.KeyGeneratorService;
-import com.example.pgp.service.KeyringLoader;
+import io.github.epi155.pgp.model.GeneratedKey;
+import io.github.epi155.pgp.model.KeyConfig;
+import io.github.epi155.pgp.model.PGPKeyInfo;
+import io.github.epi155.pgp.service.KeyGeneratorService;
+import io.github.epi155.pgp.service.KeyringLoader;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.openpgp.PGPPublicKeyRing;
 import org.bouncycastle.openpgp.PGPSecretKeyRing;

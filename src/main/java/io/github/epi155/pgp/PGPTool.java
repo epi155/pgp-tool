@@ -1,6 +1,6 @@
-package com.example.pgp;
+package io.github.epi155.pgp;
 
-import com.example.pgp.ui.MainFrame;
+import io.github.epi155.pgp.ui.MainFrame;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import javax.swing.*;
