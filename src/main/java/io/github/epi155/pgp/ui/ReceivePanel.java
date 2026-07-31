@@ -86,7 +86,7 @@ public class ReceivePanel extends JPanel {
         };
         decryptButton.setContentAreaFilled(false);
         decryptButton.setOpaque(false);
-        decryptButton.setForeground(Color.BLUE);
+        decryptButton.setForeground(new Color(0x302681));
         decryptButton.setFont(decryptButton.getFont().deriveFont(Font.BOLD));
         decryptButton.setEnabled(false);
 

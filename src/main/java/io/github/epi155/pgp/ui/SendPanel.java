@@ -134,7 +134,7 @@ public class SendPanel extends JPanel {
         };
         encryptButton.setContentAreaFilled(false);
         encryptButton.setOpaque(false);
-        encryptButton.setForeground(Color.BLUE);
+        encryptButton.setForeground(new Color(0x302681));
         encryptButton.setFont(encryptButton.getFont().deriveFont(Font.BOLD));
         Font mono = new Font("Monospaced", Font.PLAIN, 12);
         plainTextArea.setFont(mono);
