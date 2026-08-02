@@ -14,6 +14,7 @@ public class DecryptResult {
         private final Type type;
         private final int encryptionAlgorithm;
         private final int publicKeyAlgorithm;
+        private final String curve;
         private final Long recipientKeyId;
         private final List<Long> allRecipientKeyIds;
         private final String recipientUserId;
@@ -21,9 +22,17 @@ public class DecryptResult {
         public EncryptionLayer(Type type, int encryptionAlgorithm, int publicKeyAlgorithm,
                                Long recipientKeyId, List<Long> allRecipientKeyIds,
                                String recipientUserId) {
+            this(type, encryptionAlgorithm, publicKeyAlgorithm, null,
+                    recipientKeyId, allRecipientKeyIds, recipientUserId);
+        }
+
+        public EncryptionLayer(Type type, int encryptionAlgorithm, int publicKeyAlgorithm,
+                               String curve, Long recipientKeyId, List<Long> allRecipientKeyIds,
+                               String recipientUserId) {
             this.type = type;
             this.encryptionAlgorithm = encryptionAlgorithm;
             this.publicKeyAlgorithm = publicKeyAlgorithm;
+            this.curve = curve;
             this.recipientKeyId = recipientKeyId;
             this.allRecipientKeyIds = allRecipientKeyIds;
             this.recipientUserId = recipientUserId;
@@ -32,6 +41,7 @@ public class DecryptResult {
         public Type getType() { return type; }
         public int getEncryptionAlgorithm() { return encryptionAlgorithm; }
         public int getPublicKeyAlgorithm() { return publicKeyAlgorithm; }
+        public String getCurve() { return curve; }
         public Long getRecipientKeyId() { return recipientKeyId; }
         public List<Long> getAllRecipientKeyIds() { return allRecipientKeyIds; }
         public String getRecipientUserId() { return recipientUserId; }
@@ -50,15 +60,23 @@ public class DecryptResult {
         private final String userId;
         private final int hashAlgorithm;
         private final int publicKeyAlgorithm;
+        private final String curve;
         private final Date signatureTime;
 
         public SignerInfo(long keyId, VerificationStatus status, String userId,
                           int hashAlgorithm, int publicKeyAlgorithm, Date signatureTime) {
+            this(keyId, status, userId, hashAlgorithm, publicKeyAlgorithm, null, signatureTime);
+        }
+
+        public SignerInfo(long keyId, VerificationStatus status, String userId,
+                          int hashAlgorithm, int publicKeyAlgorithm, String curve,
+                          Date signatureTime) {
             this.keyId = keyId;
             this.status = status;
             this.userId = userId;
             this.hashAlgorithm = hashAlgorithm;
             this.publicKeyAlgorithm = publicKeyAlgorithm;
+            this.curve = curve;
             this.signatureTime = signatureTime;
         }
 
@@ -67,6 +85,7 @@ public class DecryptResult {
         public String getUserId() { return userId; }
         public int getHashAlgorithm() { return hashAlgorithm; }
         public int getPublicKeyAlgorithm() { return publicKeyAlgorithm; }
+        public String getCurve() { return curve; }
         public Date getSignatureTime() { return signatureTime; }
 
         public String getHashAlgorithmName() {
@@ -185,7 +204,11 @@ public class DecryptResult {
                 if (s.getHashAlgorithm() != 0) {
                     sb.append("<br><span style=\"font-weight:bold\">Hash:</span> ");
                     if (s.getPublicKeyAlgorithm() != 0) {
-                        sb.append(Metadata.pubKeyAlgName(s.getPublicKeyAlgorithm())).append('/');
+                        sb.append(Metadata.pubKeyAlgName(s.getPublicKeyAlgorithm()));
+                        if (s.getCurve() != null) {
+                            sb.append(" (").append(s.getCurve()).append(")");
+                        }
+                        sb.append('/');
                     }
                     sb.append(s.getHashAlgorithmName());
                 }
@@ -221,6 +244,8 @@ public class DecryptResult {
         private final Date modificationTime;
         private final Long signerKeyId;
         private final Integer hashAlgorithm;
+        private final Integer signerPublicKeyAlgorithm;
+        private final String signerCurve;
         private final Date signatureCreationTime;
         private final String signerUserId;
         private final String recipientUserId;
@@ -237,6 +262,8 @@ public class DecryptResult {
             this.modificationTime = b.modificationTime;
             this.signerKeyId = b.signerKeyId;
             this.hashAlgorithm = b.hashAlgorithm;
+            this.signerPublicKeyAlgorithm = b.signerPublicKeyAlgorithm;
+            this.signerCurve = b.signerCurve;
             this.signatureCreationTime = b.signatureCreationTime;
             this.signerUserId = b.signerUserId;
             this.recipientUserId = b.recipientUserId;
@@ -263,10 +290,14 @@ public class DecryptResult {
                     EncryptionLayer layer = encryptionLayers.get(i);
                     sb.append("Layer ").append(i + 1).append(": ");
                     if (layer.getType() == EncryptionLayer.Type.PASSWORD) {
-                        sb.append("Password-based");
+                        sb.append("Password-based/").append(algName(layer.getEncryptionAlgorithm()));
                     } else {
                         if (layer.getPublicKeyAlgorithm() != 0) {
-                            sb.append(pubKeyAlgName(layer.getPublicKeyAlgorithm())).append('/');
+                            sb.append(pubKeyAlgName(layer.getPublicKeyAlgorithm()));
+                            if (layer.getCurve() != null) {
+                                sb.append(" (").append(layer.getCurve()).append(")");
+                            }
+                            sb.append('/');
                         }
                         sb.append(algName(layer.getEncryptionAlgorithm()));
                         if (layer.getAllRecipientKeyIds() != null && !layer.getAllRecipientKeyIds().isEmpty()) {
@@ -313,6 +344,13 @@ public class DecryptResult {
                 sb.append("Timestamp: ").append(sdf.format(modificationTime)).append('\n');
             if (signerKeyId != null)
                 sb.append("Signer Key ID: 0x").append(String.format("%08X", signerKeyId)).append('\n');
+            if (signerPublicKeyAlgorithm != null && signerPublicKeyAlgorithm != 0) {
+                sb.append("Signer Key: ").append(pubKeyAlgName(signerPublicKeyAlgorithm));
+                if (signerCurve != null) {
+                    sb.append(" (").append(signerCurve).append(")");
+                }
+                sb.append('\n');
+            }
             if (hashAlgorithm != null)
                 sb.append("Hash: ").append(hashName(hashAlgorithm)).append('\n');
             if (signatureCreationTime != null)
@@ -333,10 +371,14 @@ public class DecryptResult {
                     EncryptionLayer layer = encryptionLayers.get(i);
                     sb.append("<b>Layer ").append(i + 1).append(":</b> ");
                     if (layer.getType() == EncryptionLayer.Type.PASSWORD) {
-                        sb.append("Password-based");
+                        sb.append("Password-based/").append(algName(layer.getEncryptionAlgorithm()));
                     } else {
                         if (layer.getPublicKeyAlgorithm() != 0) {
-                            sb.append(pubKeyAlgName(layer.getPublicKeyAlgorithm())).append('/');
+                            sb.append(pubKeyAlgName(layer.getPublicKeyAlgorithm()));
+                            if (layer.getCurve() != null) {
+                                sb.append(" (").append(layer.getCurve()).append(")");
+                            }
+                            sb.append('/');
                         }
                         sb.append(algName(layer.getEncryptionAlgorithm()));
                         if (layer.getRecipientUserId() != null) {
@@ -420,6 +462,8 @@ public class DecryptResult {
             private Date modificationTime;
             private Long signerKeyId;
             private Integer hashAlgorithm;
+            private Integer signerPublicKeyAlgorithm;
+            private String signerCurve;
             private Date signatureCreationTime;
             private String signerUserId;
             private String recipientUserId;
@@ -435,6 +479,8 @@ public class DecryptResult {
             public Builder modificationTime(Date v) { this.modificationTime = v; return this; }
             public Builder signerKeyId(long v) { this.signerKeyId = v; return this; }
             public Builder hashAlgorithm(int v) { this.hashAlgorithm = v; return this; }
+            public Builder signerPublicKeyAlgorithm(int v) { this.signerPublicKeyAlgorithm = v; return this; }
+            public Builder signerCurve(String v) { this.signerCurve = v; return this; }
             public Builder signatureCreationTime(Date v) { this.signatureCreationTime = v; return this; }
             public Builder signerUserId(String v) { this.signerUserId = v; return this; }
             public Builder recipientUserId(String v) { this.recipientUserId = v; return this; }
@@ -469,6 +515,13 @@ public class DecryptResult {
                 case 8: return "AES-192";
                 case 9: return "AES-256";
                 case 10: return "Twofish";
+                case 11: return "Camellia-128";
+                case 12: return "Camellia-192";
+                case 13: return "Camellia-256";
+                case 100: return "Serpent-128";
+                case 101: return "Serpent-192";
+                case 102: return "Serpent-256";
+                case 103: return "ChaCha20-Poly1305";
                 default: return "Algo#" + algo;
             }
         }

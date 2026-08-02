@@ -59,7 +59,7 @@ public class KeyTabPanel extends JPanel {
         JPanel masterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
         masterPanel.setBorder(masterBorder);
 
-        masterAlgoCombo = new JComboBox<>(new String[]{"RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1", "Ed25519", "Ed448"});
+        masterAlgoCombo = new JComboBox<>(new String[]{"RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1", "EC brainpoolP256r1", "EC brainpoolP384r1", "EC brainpoolP512r1", "Ed25519", "Ed448"});
         masterAlgoCombo.addActionListener(e -> updateMasterCheckboxes());
         masterPanel.add(new JLabel("Type:"));
         masterPanel.add(masterAlgoCombo);
@@ -179,9 +179,7 @@ public class KeyTabPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "Key generated successfully.",
                     "OK", JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception ex) {
-            ex.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Error during generation:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+            UIUtils.showError(this, "Error during generation:\n" + ex.getMessage(), ex);
         }
     }
 
@@ -308,9 +306,7 @@ public class KeyTabPanel extends JPanel {
                 JOptionPane.showMessageDialog(this, "Public key saved:\n" + file.getAbsolutePath(),
                         "OK", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) {
-                ex.printStackTrace();
-                JOptionPane.showMessageDialog(this, "Error during save:\n" + ex.getMessage(),
-                        "Error", JOptionPane.ERROR_MESSAGE);
+                UIUtils.showError(this, "Error during save:\n" + ex.getMessage(), ex);
             }
         }
     }
@@ -331,8 +327,7 @@ public class KeyTabPanel extends JPanel {
             try {
                 secRing = KeyGeneratorService.reEncrypt(generatedKey.getSecretKeyRing(), pwdDlg.getPassword());
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Error during key encryption:\n" + ex.getMessage(),
-                        "Error", JOptionPane.ERROR_MESSAGE);
+                UIUtils.showError(this, "Error during key encryption:\n" + ex.getMessage(), ex);
                 return;
             }
         } else {
@@ -351,9 +346,7 @@ public class KeyTabPanel extends JPanel {
                         "OK", JOptionPane.INFORMATION_MESSAGE);
             }
         } catch (Exception ex) {
-            ex.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Error during save:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+            UIUtils.showError(this, "Error during save:\n" + ex.getMessage(), ex);
         }
     }
 
@@ -369,7 +362,7 @@ public class KeyTabPanel extends JPanel {
 
         SubKeyRow() {
             panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
-            algoCombo = new JComboBox<>(new String[]{"RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1", "Ed25519", "Ed448", "X25519", "X448"});
+            algoCombo = new JComboBox<>(new String[]{"RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1", "EC brainpoolP256r1", "EC brainpoolP384r1", "EC brainpoolP512r1", "Ed25519", "Ed448", "X25519", "X448"});
             expCombo = new JComboBox<>(expirationOptions());
             signCb = new JCheckBox("Sign", true);
             encryptCb = new JCheckBox("Encrypt", true);

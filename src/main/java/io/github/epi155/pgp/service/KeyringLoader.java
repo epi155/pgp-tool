@@ -2,8 +2,16 @@ package io.github.epi155.pgp.service;
 
 import io.github.epi155.pgp.model.KeyBundle;
 import io.github.epi155.pgp.model.PGPKeyInfo;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.bcpg.ArmoredInputStream;
+import org.bouncycastle.bcpg.BCPGKey;
+import org.bouncycastle.bcpg.ECPublicBCPGKey;
+import org.bouncycastle.bcpg.Ed25519PublicBCPGKey;
+import org.bouncycastle.bcpg.Ed448PublicBCPGKey;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
+import org.bouncycastle.bcpg.X25519PublicBCPGKey;
+import org.bouncycastle.bcpg.X448PublicBCPGKey;
 import org.bouncycastle.bcpg.sig.KeyFlags;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator;
@@ -150,7 +158,7 @@ public class KeyringLoader {
             Iterator<String> uids = key.getUserIDs();
             while (uids.hasNext()) userIds.add(uids.next());
         }
-        return new PGPKeyInfo(keyId, fp, algorithm, bitLen, creation, isMaster,
+        return new PGPKeyInfo(keyId, fp, algorithm, curveName(key), bitLen, creation, isMaster,
                 canSign, canEncrypt, userIds, key);
     }
 
@@ -169,8 +177,31 @@ public class KeyringLoader {
             Iterator<String> uids = key.getUserIDs();
             while (uids.hasNext()) userIds.add(uids.next());
         }
-        return new PGPKeyInfo(keyId, fp, algorithm, bitLen, creation, isMaster,
+        return new PGPKeyInfo(keyId, fp, algorithm, curveName(pubKey), bitLen, creation, isMaster,
                 canSign, canEncrypt, userIds, key);
+    }
+
+    public static String curveName(PGPPublicKey key) {
+        BCPGKey bcKey = key.getPublicKeyPacket().getKey();
+        if (bcKey instanceof Ed25519PublicBCPGKey) return "Ed25519";
+        if (bcKey instanceof Ed448PublicBCPGKey) return "Ed448";
+        if (bcKey instanceof X25519PublicBCPGKey) return "X25519";
+        if (bcKey instanceof X448PublicBCPGKey) return "X448";
+        if (bcKey instanceof ECPublicBCPGKey) {
+            ASN1ObjectIdentifier oid = ((ECPublicBCPGKey) bcKey).getCurveOID();
+            if (oid == null) return null;
+            if ("1.3.6.1.4.1.11591.15.1".equals(oid.getId())) return "Ed25519";
+            String name = ECNamedCurveTable.getName(oid);
+            if (name == null) return oid.getId();
+            switch (name) {
+                case "curve25519": return "X25519";
+                case "prime256v1": return "secp256r1";
+                case "prime384v1": return "secp384r1";
+                case "prime521v1": return "secp521r1";
+                default: return name;
+            }
+        }
+        return null;
     }
 
     private static int bitLenFor(int algo) {

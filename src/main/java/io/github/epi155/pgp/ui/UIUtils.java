@@ -1,5 +1,6 @@
 package io.github.epi155.pgp.ui;
 
+import io.github.epi155.pgp.log.AppLog;
 import io.github.epi155.pgp.model.PGPKeyInfo;
 
 import javax.swing.*;
@@ -21,6 +22,12 @@ public final class UIUtils {
             if (b < 0x09 || (b > 0x0D && b < 0x20) || b > 0x7E) control++;
         }
         return (double) control / len > 0.30;
+    }
+
+    public static void showError(Component parent, String message, Throwable ex) {
+        AppLog.error(message, ex);
+        JOptionPane.showMessageDialog(parent, message != null ? message : ex.getMessage(),
+                "Error", JOptionPane.ERROR_MESSAGE);
     }
 
     public static JScrollPane wrapInScroll(JComponent comp, String title) {

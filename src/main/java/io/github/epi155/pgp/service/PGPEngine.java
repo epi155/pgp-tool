@@ -8,11 +8,13 @@ import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
 import org.bouncycastle.openpgp.operator.PBEDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.PGPContentSignerBuilder;
+import org.bouncycastle.openpgp.operator.PGPKeyEncryptionMethodGenerator;
 import org.bouncycastle.openpgp.operator.PublicKeyDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.jcajce.*;
 import org.bouncycastle.openpgp.operator.bc.BcPBESecretKeyDecryptorBuilder;
 import org.bouncycastle.openpgp.operator.bc.BcPGPDigestCalculatorProvider;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyDataDecryptorFactory;
+import org.bouncycastle.openpgp.operator.bc.BcPublicKeyKeyEncryptionMethodGenerator;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -55,15 +57,11 @@ public class PGPEngine {
                         List<Integer> hashAlgorithms, boolean armor,
                         ProgressCallback progress) throws Exception {
         try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
-            PGPEncryptedDataGenerator encGen = new PGPEncryptedDataGenerator(
-                    new JcePGPDataEncryptorBuilder(symmetricAlgorithm)
-                            .setWithIntegrityPacket(true)
-                            .setSecureRandom(new SecureRandom())
-                            .setProvider("BC"));
+            List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
             for (PGPPublicKey key : encKeys) {
-                encGen.addMethod(new JcePublicKeyKeyEncryptionMethodGenerator(key).setProvider("BC"));
+                methods.add(createPublicKeyMethod(key));
             }
-            try (OutputStream encOut = encGen.open(armored, new byte[CHUNK_SIZE])) {
+            try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
                 PGPCompressedDataGenerator comData = new PGPCompressedDataGenerator(compressionAlgorithm);
                 try (OutputStream zipOut = comData.open(encOut)) {
                     writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
@@ -77,15 +75,11 @@ public class PGPEngine {
                             boolean armor,
                             ProgressCallback progress) throws Exception {
         try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
-            PGPEncryptedDataGenerator encGen = new PGPEncryptedDataGenerator(
-                    new JcePGPDataEncryptorBuilder(symmetricAlgorithm)
-                            .setWithIntegrityPacket(true)
-                            .setSecureRandom(new SecureRandom())
-                            .setProvider("BC"));
+            List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
             for (PGPPublicKey key : encKeys) {
-                encGen.addMethod(new JcePublicKeyKeyEncryptionMethodGenerator(key).setProvider("BC"));
+                methods.add(createPublicKeyMethod(key));
             }
-            try (OutputStream encOut = encGen.open(armored, new byte[CHUNK_SIZE])) {
+            try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
                 encOut.write(data);
             }
         }
@@ -96,13 +90,9 @@ public class PGPEngine {
                                     boolean armor,
                                     ProgressCallback progress) throws Exception {
         try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
-            PGPEncryptedDataGenerator encGen = new PGPEncryptedDataGenerator(
-                    new JcePGPDataEncryptorBuilder(symmetricAlgorithm)
-                            .setWithIntegrityPacket(true)
-                            .setSecureRandom(new SecureRandom())
-                            .setProvider("BC"));
-            encGen.addMethod(new JcePBEKeyEncryptionMethodGenerator(password).setProvider("BC"));
-            try (OutputStream encOut = encGen.open(armored, new byte[CHUNK_SIZE])) {
+            List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
+            methods.add(createPBEMethod(password, symmetricAlgorithm));
+            try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
                 encOut.write(data);
             }
         }
@@ -114,19 +104,52 @@ public class PGPEngine {
                                  List<Integer> hashAlgorithms, boolean armor,
                                  ProgressCallback progress) throws Exception {
         try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
-            PGPEncryptedDataGenerator encGen = new PGPEncryptedDataGenerator(
-                    new JcePGPDataEncryptorBuilder(symmetricAlgorithm)
-                            .setWithIntegrityPacket(true)
-                            .setSecureRandom(new SecureRandom())
-                            .setProvider("BC"));
-            encGen.addMethod(new JcePBEKeyEncryptionMethodGenerator(password).setProvider("BC"));
-            try (OutputStream encOut = encGen.open(armored, new byte[CHUNK_SIZE])) {
+            List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
+            methods.add(createPBEMethod(password, symmetricAlgorithm));
+            try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
                 PGPCompressedDataGenerator comData = new PGPCompressedDataGenerator(compressionAlgorithm);
                 try (OutputStream zipOut = comData.open(encOut)) {
                     writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
                 }
             }
         }
+    }
+
+    private OutputStream openEncrypt(int symmetricAlgorithm, OutputStream out,
+                                     List<PGPKeyEncryptionMethodGenerator> methods) throws Exception {
+        if (CustomAlgorithms.isCustom(symmetricAlgorithm)) {
+            CustomEncryptedDataGenerator gen = new CustomEncryptedDataGenerator(symmetricAlgorithm, new SecureRandom());
+            for (PGPKeyEncryptionMethodGenerator method : methods) {
+                gen.addMethod(method);
+            }
+            return gen.open(out);
+        }
+        PGPEncryptedDataGenerator gen = new PGPEncryptedDataGenerator(
+                new JcePGPDataEncryptorBuilder(symmetricAlgorithm)
+                        .setWithIntegrityPacket(true)
+                        .setSecureRandom(new SecureRandom())
+                        .setProvider("BC"));
+        for (PGPKeyEncryptionMethodGenerator method : methods) {
+            gen.addMethod(method);
+        }
+        return gen.open(out, new byte[CHUNK_SIZE]);
+    }
+
+    private PGPKeyEncryptionMethodGenerator createPublicKeyMethod(PGPPublicKey key) {
+        int keyAlgo = key.getAlgorithm();
+        if (keyAlgo == PublicKeyAlgorithmTags.ECDH
+                || keyAlgo == PublicKeyAlgorithmTags.X25519
+                || keyAlgo == PublicKeyAlgorithmTags.X448) {
+            return new BcPublicKeyKeyEncryptionMethodGenerator(key).setSecureRandom(new SecureRandom());
+        }
+        return new JcePublicKeyKeyEncryptionMethodGenerator(key).setProvider("BC");
+    }
+
+    private PGPKeyEncryptionMethodGenerator createPBEMethod(char[] password, int symmetricAlgorithm) {
+        if (CustomAlgorithms.isCustom(symmetricAlgorithm)) {
+            return new CustomPBEKeyEncryptionMethodGenerator(password);
+        }
+        return new JcePBEKeyEncryptionMethodGenerator(password).setProvider("BC");
     }
 
     public void encryptCompress(byte[] data, String fileName, OutputStream out,
@@ -162,8 +185,7 @@ public class PGPEngine {
             for (int i = 0; i < signKeys.size(); i++) {
                 char[] passphrase = signPassphrases != null && i < signPassphrases.size()
                         ? signPassphrases.get(i) : null;
-                PGPPrivateKey signPrivateKey = signKeys.get(i).extractPrivateKey(
-                        new JcePBESecretKeyDecryptorBuilder().setProvider("BC").build(passphrase));
+                PGPPrivateKey signPrivateKey = extractPrivateKey(signKeys.get(i), passphrase);
                 PGPPublicKey signPubKey = signKeys.get(i).getPublicKey();
                 int userHash = (hashAlgorithms != null && i < hashAlgorithms.size())
                     ? hashAlgorithms.get(i) : HashAlgorithmTags.SHA256;
@@ -394,8 +416,7 @@ public class PGPEngine {
                 PGPEncryptedData ed = it.next();
                 if (ed instanceof PGPPBEEncryptedData) {
                     char[] password = pbePasswords.remove(0);
-                    PBEDataDecryptorFactory pbeFactory = new JcePBEDataDecryptorFactoryBuilder()
-                            .setProvider("BC").build(password);
+                    PBEDataDecryptorFactory pbeFactory = new CustomAwarePBEDataDecryptorFactory(password);
                     int symAlgo = ((PGPPBEEncryptedData) ed).getSymmetricAlgorithm(pbeFactory);
                     encLayers.add(new DecryptResult.EncryptionLayer(
                             DecryptResult.EncryptionLayer.Type.PASSWORD, symAlgo, 0,
@@ -414,8 +435,7 @@ public class PGPEngine {
                     if (password == null) {
                         throw new PGPException("Password prompt cancelled");
                     }
-                    PBEDataDecryptorFactory pbeFactory = new JcePBEDataDecryptorFactoryBuilder()
-                            .setProvider("BC").build(password);
+                    PBEDataDecryptorFactory pbeFactory = new CustomAwarePBEDataDecryptorFactory(password);
                     int symAlgo = ((PGPPBEEncryptedData) ed).getSymmetricAlgorithm(pbeFactory);
                     encLayers.add(new DecryptResult.EncryptionLayer(
                             DecryptResult.EncryptionLayer.Type.PASSWORD, symAlgo, 0,
@@ -467,12 +487,14 @@ public class PGPEngine {
                     InputStream clearStream;
                     int symAlgo;
                     try {
-                        PublicKeyDataDecryptorFactory decryptorFactory = new JcePublicKeyDataDecryptorFactoryBuilder()
-                                .setProvider("BC").build(privateKey);
+                        PublicKeyDataDecryptorFactory decryptorFactory = new CustomAwarePublicKeyDataDecryptorFactory(
+                                new JcePublicKeyDataDecryptorFactoryBuilder()
+                                        .setProvider("BC").build(privateKey));
                         symAlgo = encData.getSymmetricAlgorithm(decryptorFactory);
                         clearStream = encData.getDataStream(decryptorFactory);
                     } catch (Exception e) {
-                        PublicKeyDataDecryptorFactory decryptorFactory = new BcPublicKeyDataDecryptorFactory(privateKey);
+                        PublicKeyDataDecryptorFactory decryptorFactory = new CustomAwarePublicKeyDataDecryptorFactory(
+                                new BcPublicKeyDataDecryptorFactory(privateKey));
                         symAlgo = encData.getSymmetricAlgorithm(decryptorFactory);
                         clearStream = encData.getDataStream(decryptorFactory);
                     }
@@ -480,6 +502,7 @@ public class PGPEngine {
                     encLayers.add(new DecryptResult.EncryptionLayer(
                             DecryptResult.EncryptionLayer.Type.PUBLIC_KEY, symAlgo,
                             sk.getPublicKey().getAlgorithm(),
+                            KeyringLoader.curveName(sk.getPublicKey()),
                             encData.getKeyID(), allRecipientIds, uid));
 
                     return clearStream;
@@ -603,6 +626,7 @@ public class PGPEngine {
                         signerKeyId, signerStatus,
                         userId != null ? userId : sigUserId,
                         sigHashAlgo, ops.getKeyAlgorithm(),
+                        pubKey != null ? KeyringLoader.curveName(pubKey) : null,
                         sigTime));
             }
 
@@ -628,6 +652,9 @@ public class PGPEngine {
                 long firstKeyId = signers.get(0).getKeyId();
                 metaBuilder.signerKeyId(firstKeyId);
                 metaBuilder.hashAlgorithm(signers.get(0).getHashAlgorithm());
+                metaBuilder.signerPublicKeyAlgorithm(signers.get(0).getPublicKeyAlgorithm());
+                if (signers.get(0).getCurve() != null)
+                    metaBuilder.signerCurve(signers.get(0).getCurve());
                 if (signers.get(0).getSignatureTime() != null)
                     metaBuilder.signatureCreationTime(signers.get(0).getSignatureTime());
                 if (signers.get(0).getUserId() != null)
@@ -740,8 +767,26 @@ public class PGPEngine {
                 if (key.getKeyEncryptionAlgorithm() == SymmetricKeyAlgorithmTags.NULL) {
                     throw new PGPException("manual extraction not available in this API version");
                 }
+                if (isChecksumMismatch(e2)) {
+                    throw new PassphraseRequiredException(key.getKeyID(), firstUserId(key), e2);
+                }
                 throw new PGPException("failed to extract private key", e2);
             }
         }
+    }
+
+    private static boolean isChecksumMismatch(Throwable t) {
+        Throwable c = t;
+        while (c != null) {
+            String m = c.getMessage();
+            if (m != null && m.contains("checksum mismatch")) return true;
+            c = c.getCause();
+        }
+        return false;
+    }
+
+    private static String firstUserId(PGPSecretKey key) {
+        Iterator<String> uids = key.getUserIDs();
+        return uids.hasNext() ? uids.next() : null;
     }
 }
