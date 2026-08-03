@@ -51,7 +51,7 @@ public final class CustomCompression {
             case XZ:
                 return new XZOutputStream(out, new LZMA2Options());
             case ZSTD:
-                return new ZstdOutputStream(out);
+                return new ZstdOutputStream(out, 7);
             default:
                 throw new IllegalArgumentException("not a custom compression tag: " + algorithm);
         }

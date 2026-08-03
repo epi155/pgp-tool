@@ -126,7 +126,7 @@ Wire format per chunk (64 KiB, encoded size 10) — `AeadEncryptingStream`/`Aead
 - **Reader** (`PGPEngine` decompress path): if `compData.getAlgorithm()` is custom, wrap
   `compData.getInputStream()` (raw bytes) with `CustomCompression.decompress(...)` instead of `getDataStream()`.
 - **Not interoperable**: gpg and other tools do not know the 128/129 byte and cannot decrypt such messages
-  (same caveat as the custom AEAD ciphers). Compression level is fixed (XZ default preset, ZSTD default level);
+  (same caveat as the custom AEAD ciphers). Compression level is fixed (XZ default preset 6, ZSTD level 7);
   a `--compress-level` knob would be a future extension.
 - `com.github.luben:zstd-jni` is JNI: the fat jar bundles natives **only for `linux/amd64` and
   `win/amd64`** (see the shade `excludes` in `pom.xml`), so one `java -jar` runs on x86_64
