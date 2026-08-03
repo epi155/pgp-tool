@@ -1,8 +1,7 @@
 package io.github.epi155.pgp.log;
 
-import javax.swing.JOptionPane;
-import javax.swing.SwingUtilities;
-import java.awt.GraphicsEnvironment;
+import javax.swing.*;
+import java.awt.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 

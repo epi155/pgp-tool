@@ -4,15 +4,7 @@ import io.github.epi155.pgp.model.CompoundCodec;
 import io.github.epi155.pgp.model.CompoundMessage;
 import io.github.epi155.pgp.model.KeyBundle;
 import io.github.epi155.pgp.model.PGPKeyInfo;
-import io.github.epi155.pgp.service.CustomAlgorithms;
-import io.github.epi155.pgp.service.KeyringLoader;
-import io.github.epi155.pgp.service.PGPEngine;
-import io.github.epi155.pgp.service.ProgressCallback;
-import io.github.epi155.pgp.service.SerpentTags;
-import static io.github.epi155.pgp.ui.UIUtils.createPublicFileChooser;
-import static io.github.epi155.pgp.ui.UIUtils.createSecretFileChooser;
-import static io.github.epi155.pgp.ui.UIUtils.isBinaryContent;
-import static io.github.epi155.pgp.ui.UIUtils.wrapInScroll;
+import io.github.epi155.pgp.service.*;
 import org.bouncycastle.bcpg.CompressionAlgorithmTags;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
@@ -24,18 +16,22 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.undo.UndoManager;
 import java.awt.*;
-import java.awt.datatransfer.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+
+import static io.github.epi155.pgp.ui.UIUtils.*;
 
 public class SendPanel extends JPanel {
 
@@ -74,7 +70,7 @@ public class SendPanel extends JPanel {
         setLayout(new BorderLayout(5, 5));
 
         encCheckBox = new JCheckBox("Enc", true);
-        compAlgoCombo = new JComboBox<>(new String[]{"ZIP", "ZLIB", "BZIP2", "None"});
+        compAlgoCombo = new JComboBox<>(new String[]{"ZIP", "ZLIB", "BZIP2", "XZ", "ZSTD", "None"});
         compAlgoCombo.setSelectedItem("ZLIB");
         compAlgoCombo.setEnabled(false);
 
@@ -531,6 +527,8 @@ public class SendPanel extends JPanel {
             case "ZLIB": return CompressionAlgorithmTags.ZLIB;
             case "ZIP": return CompressionAlgorithmTags.ZIP;
             case "BZIP2": return CompressionAlgorithmTags.BZIP2;
+            case "XZ": return CustomCompression.XZ;
+            case "ZSTD": return CustomCompression.ZSTD;
             default: return CompressionAlgorithmTags.UNCOMPRESSED;
         }
     }

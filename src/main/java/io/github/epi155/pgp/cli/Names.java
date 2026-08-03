@@ -1,6 +1,7 @@
 package io.github.epi155.pgp.cli;
 
 import io.github.epi155.pgp.service.CustomAlgorithms;
+import io.github.epi155.pgp.service.CustomCompression;
 import io.github.epi155.pgp.service.SerpentTags;
 import org.bouncycastle.bcpg.CompressionAlgorithmTags;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
@@ -69,9 +70,11 @@ public final class Names {
             case "ZIP": return CompressionAlgorithmTags.ZIP;
             case "ZLIB": return CompressionAlgorithmTags.ZLIB;
             case "BZIP2": return CompressionAlgorithmTags.BZIP2;
+            case "XZ": return CustomCompression.XZ;
+            case "ZSTD": return CustomCompression.ZSTD;
             default:
                 throw new CliException("Unknown compression algorithm: '" + name
-                        + "' (use ZIP, ZLIB, BZIP2, UNCOMPRESSED)", true);
+                        + "' (use ZIP, ZLIB, BZIP2, XZ, ZSTD, UNCOMPRESSED)", true);
         }
     }
 }

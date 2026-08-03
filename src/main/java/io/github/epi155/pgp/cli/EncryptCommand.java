@@ -13,13 +13,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public final class EncryptCommand {
 
@@ -355,7 +349,7 @@ public final class EncryptCommand {
                 + "                            HASH: SHA-256 (default), SHA-384, SHA-512, RIPEMD160\n"
                 + "  --passphrase P          Fallback signing passphrase (or - for stdin)\n"
                 + "  --passphrase-file FILE  Fallback signing passphrases, one per line\n"
-                + "  --compress ALGO         ZIP, ZLIB, BZIP2, UNCOMPRESSED (default ZLIB)\n"
+                + "  --compress ALGO         ZIP, ZLIB, BZIP2, XZ, ZSTD, UNCOMPRESSED (default ZLIB)\n"
                 + "  --attach FILE           Attach FILE (repeatable) in a compound message\n"
                 + "  --armor / --no-armor    ASCII armor the output (default armor)\n"
                 + "  --force                 Overwrite the output file if it exists\n"

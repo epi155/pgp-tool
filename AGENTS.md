@@ -110,6 +110,30 @@ Wire format per chunk (64 KiB, encoded size 10) — `AeadEncryptingStream`/`Aead
   CFB for 100-102 (`Serpent/CFB/NoPadding`); tag 103 alone uses the CHACHA7539 convention (`isChaCha20` route in
   `CustomPBEKeyEncryptionMethodGenerator` / `CustomAwarePBEDataDecryptorFactory`). Only the **data** packet is AEAD.
 
+## Custom compression tags (128 XZ, 129 ZSTD)
+
+- BC's `PGPCompressedDataGenerator` only accepts IDs 0-3 (`CompressionAlgorithmTags`) and
+  `PGPCompressedData.getDataStream()` throws "can't recognise compression algorithm" for anything else.
+  Custom private-use IDs are dispatched via `service/CustomCompression` (`isCustom`/`name`/`compress`/`decompress`):
+  128 = XZ (streaming LZMA2, `org.tukaani:xz`, `XZOutputStream`/`XZInputStream`, default preset),
+  129 = ZSTD (`com.github.luben:zstd-jni`, `ZstdOutputStream`/`ZstdInputStream`). 130 reserved/unused.
+- **Writer** (`PGPEngine.openCompressedData`, used by `encrypt`/`encryptPassword`/`encryptCompress`): IDs 0-3
+  go through BC's generator; custom IDs go through `CustomCompressedDataGenerator`, which mirrors BC's pattern —
+  writes `BCPGOutputStream(out, PacketTags.COMPRESSED_DATA)` + the algorithm byte, then streams the codec over a
+  `NonClosingOutputStream` adapter so the codec's `close()` finalises its footer without closing the packet;
+  `CustomCompressedDataGenerator.close()` then does `pkOut.finish()` + `flush()` (packet end, outer encrypted
+  stream stays open). Only the innermost layer compresses (same as before); `encryptRaw*` never compresses.
+- **Reader** (`PGPEngine` decompress path): if `compData.getAlgorithm()` is custom, wrap
+  `compData.getInputStream()` (raw bytes) with `CustomCompression.decompress(...)` instead of `getDataStream()`.
+- **Not interoperable**: gpg and other tools do not know the 128/129 byte and cannot decrypt such messages
+  (same caveat as the custom AEAD ciphers). Compression level is fixed (XZ default preset, ZSTD default level);
+  a `--compress-level` knob would be a future extension.
+- `com.github.luben:zstd-jni` is JNI: the fat jar bundles natives **only for `linux/amd64` and
+  `win/amd64`** (see the shade `excludes` in `pom.xml`), so one `java -jar` runs on x86_64
+  Linux/Windows. `Native.load()` extracts the right one at runtime. Other platforms (ARM, macOS,
+  x86 32-bit) will fail to load zstd at runtime — add their native dir back to the shade filter
+  if needed.
+
 ## UI state persistence
 
 - Window position/size and per-tab preferences via `java.util.prefs.Preferences` (derived from `MainFrame.class`'s package, `io.github.epi155.pgp`)

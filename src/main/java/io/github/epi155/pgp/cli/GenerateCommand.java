@@ -6,17 +6,11 @@ import io.github.epi155.pgp.model.PGPKeyInfo;
 import io.github.epi155.pgp.service.KeyGeneratorService;
 import io.github.epi155.pgp.service.KeyringLoader;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
-import org.bouncycastle.openpgp.PGPPublicKeyRing;
 import org.bouncycastle.openpgp.PGPSecretKeyRing;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 
 public final class GenerateCommand {
 

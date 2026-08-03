@@ -6,29 +6,24 @@ import io.github.epi155.pgp.model.KeyBundle;
 import io.github.epi155.pgp.model.PGPKeyInfo;
 import io.github.epi155.pgp.service.KeyringLoader;
 import io.github.epi155.pgp.service.PGPEngine;
-import io.github.epi155.pgp.service.ProgressCallback;
-import static io.github.epi155.pgp.ui.UIUtils.createPublicFileChooser;
-import static io.github.epi155.pgp.ui.UIUtils.createSecretFileChooser;
-import static io.github.epi155.pgp.ui.UIUtils.isBinaryContent;
-import static io.github.epi155.pgp.ui.UIUtils.wrapInScroll;
 import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPSecretKey;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.datatransfer.*;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionEvent;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
+
+import static io.github.epi155.pgp.ui.UIUtils.*;
 
 public class ReceivePanel extends JPanel {
 

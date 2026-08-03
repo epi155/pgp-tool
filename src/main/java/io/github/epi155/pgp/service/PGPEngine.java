@@ -10,13 +10,16 @@ import org.bouncycastle.openpgp.operator.PBEDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.PGPContentSignerBuilder;
 import org.bouncycastle.openpgp.operator.PGPKeyEncryptionMethodGenerator;
 import org.bouncycastle.openpgp.operator.PublicKeyDataDecryptorFactory;
-import org.bouncycastle.openpgp.operator.jcajce.*;
 import org.bouncycastle.openpgp.operator.bc.BcPBESecretKeyDecryptorBuilder;
 import org.bouncycastle.openpgp.operator.bc.BcPGPDigestCalculatorProvider;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyKeyEncryptionMethodGenerator;
+import org.bouncycastle.openpgp.operator.jcajce.*;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,8 +65,7 @@ public class PGPEngine {
                 methods.add(createPublicKeyMethod(key));
             }
             try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
-                PGPCompressedDataGenerator comData = new PGPCompressedDataGenerator(compressionAlgorithm);
-                try (OutputStream zipOut = comData.open(encOut)) {
+                try (OutputStream zipOut = openCompressedData(encOut, compressionAlgorithm)) {
                     writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
                 }
             }
@@ -107,8 +109,7 @@ public class PGPEngine {
             List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
             methods.add(createPBEMethod(password, symmetricAlgorithm));
             try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
-                PGPCompressedDataGenerator comData = new PGPCompressedDataGenerator(compressionAlgorithm);
-                try (OutputStream zipOut = comData.open(encOut)) {
+                try (OutputStream zipOut = openCompressedData(encOut, compressionAlgorithm)) {
                     writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
                 }
             }
@@ -135,6 +136,13 @@ public class PGPEngine {
         return gen.open(out, new byte[CHUNK_SIZE]);
     }
 
+    private OutputStream openCompressedData(OutputStream out, int compressionAlgorithm) throws IOException {
+        if (CustomCompression.isCustom(compressionAlgorithm)) {
+            return new CustomCompressedDataGenerator(compressionAlgorithm).open(out);
+        }
+        return new PGPCompressedDataGenerator(compressionAlgorithm).open(out);
+    }
+
     private PGPKeyEncryptionMethodGenerator createPublicKeyMethod(PGPPublicKey key) {
         int keyAlgo = key.getAlgorithm();
         if (keyAlgo == PublicKeyAlgorithmTags.ECDH
@@ -158,8 +166,7 @@ public class PGPEngine {
                                  List<Integer> hashAlgorithms, boolean armor,
                                  ProgressCallback progress) throws Exception {
         try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
-            PGPCompressedDataGenerator comData = new PGPCompressedDataGenerator(compressionAlgorithm);
-            try (OutputStream zipOut = comData.open(armored)) {
+            try (OutputStream zipOut = openCompressedData(armored, compressionAlgorithm)) {
                 writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
             }
         }
@@ -374,7 +381,9 @@ public class PGPEngine {
         if (message instanceof PGPCompressedData) {
             PGPCompressedData compData = (PGPCompressedData) message;
             metaBuilder.compressionAlgorithm(compData.getAlgorithm());
-            InputStream compStream = compData.getDataStream();
+            InputStream compStream = CustomCompression.isCustom(compData.getAlgorithm())
+                    ? CustomCompression.decompress(compData.getInputStream(), compData.getAlgorithm())
+                    : compData.getDataStream();
             plainFact = new JcaPGPObjectFactory(compStream);
         }
 
