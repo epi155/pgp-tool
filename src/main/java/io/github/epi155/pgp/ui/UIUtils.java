@@ -4,10 +4,8 @@ import io.github.epi155.pgp.model.PGPKeyInfo;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
-import java.awt.*;
 import java.awt.datatransfer.DataFlavor;
 import java.io.File;
-import java.util.List;
 import java.util.function.Consumer;
 
 public final class UIUtils {

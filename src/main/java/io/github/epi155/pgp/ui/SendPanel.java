@@ -6,11 +6,6 @@ import io.github.epi155.pgp.model.KeyBundle;
 import io.github.epi155.pgp.model.PGPKeyInfo;
 import io.github.epi155.pgp.service.KeyringLoader;
 import io.github.epi155.pgp.service.PGPEngine;
-import io.github.epi155.pgp.service.ProgressCallback;
-import static io.github.epi155.pgp.ui.UIUtils.createPublicFileChooser;
-import static io.github.epi155.pgp.ui.UIUtils.createSecretFileChooser;
-import static io.github.epi155.pgp.ui.UIUtils.isBinaryContent;
-import static io.github.epi155.pgp.ui.UIUtils.wrapInScroll;
 import org.bouncycastle.bcpg.CompressionAlgorithmTags;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
@@ -22,18 +17,22 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.undo.UndoManager;
 import java.awt.*;
-import java.awt.datatransfer.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+
+import static io.github.epi155.pgp.ui.UIUtils.*;
 
 public class SendPanel extends JPanel {
 

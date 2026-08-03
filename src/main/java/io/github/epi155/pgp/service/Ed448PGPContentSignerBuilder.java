@@ -12,11 +12,7 @@ import org.bouncycastle.openpgp.operator.jcajce.JcaPGPKeyConverter;
 import org.bouncycastle.util.io.TeeOutputStream;
 
 import java.io.OutputStream;
-import java.security.GeneralSecurityException;
-import java.security.PrivateKey;
-import java.security.SecureRandom;
-import java.security.Signature;
-import java.security.SignatureException;
+import java.security.*;
 
 public class Ed448PGPContentSignerBuilder implements PGPContentSignerBuilder {
 
