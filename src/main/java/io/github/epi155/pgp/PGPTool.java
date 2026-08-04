@@ -7,6 +7,7 @@ import io.github.epi155.pgp.ui.MainFrame;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import javax.swing.*;
+import javax.swing.plaf.metal.MetalLookAndFeel;
 import java.security.Security;
 
 public class PGPTool {
@@ -43,8 +44,12 @@ public class PGPTool {
         Security.addProvider(new BouncyCastleProvider());
 
         try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {}
+            UIManager.setLookAndFeel(new MetalLookAndFeel());
+        } catch (Exception e) {
+            try {
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            } catch (Exception ignored) {}
+        }
 
         boolean keyTab = showKeyTab;
         boolean adv = advanced;
