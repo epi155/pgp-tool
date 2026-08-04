@@ -185,8 +185,8 @@ public class PGPEngine {
     private void writeSignAndLiteral(OutputStream out, byte[] data, String fileName,
                                       List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
                                       List<Integer> hashAlgorithms,
-                                      ProgressCallback progress) throws Exception {
-        int total = data.length;
+                                       ProgressCallback progress) throws Exception {
+        long total = data.length;
         if (signKeys != null && !signKeys.isEmpty()) {
             List<PGPSignatureGenerator> sigGens = new ArrayList<>();
             for (int i = 0; i < signKeys.size(); i++) {
@@ -212,16 +212,16 @@ public class PGPEngine {
             PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
             try (OutputStream litOut = litGen.open(out, PGPLiteralData.BINARY,
                     fileName, total, new Date())) {
-                int offset = 0;
+                long offset = 0;
                 while (offset < total) {
-                    int chunk = Math.min(CHUNK_SIZE, total - offset);
+                    int chunk = (int) Math.min(CHUNK_SIZE, total - offset);
                     for (PGPSignatureGenerator sigGen : sigGens) {
-                        sigGen.update(data, offset, chunk);
+                        sigGen.update(data, (int) offset, chunk);
                     }
-                    litOut.write(data, offset, chunk);
+                    litOut.write(data, (int) offset, chunk);
                     offset += chunk;
                     if (progress != null)
-                        progress.onProgress(offset * 100 / total, "Encrypting...");
+                        progress.onProgress((int) (offset * 100 / total), "Encrypting...");
                 }
             }
             for (PGPSignatureGenerator sigGen : sigGens) {
@@ -231,13 +231,13 @@ public class PGPEngine {
             PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
             try (OutputStream dataOutputStream = litGen.open(out, PGPLiteralData.BINARY,
                     fileName, total, new Date())) {
-                int offset = 0;
+                long offset = 0;
                 while (offset < total) {
-                    int chunk = Math.min(CHUNK_SIZE, total - offset);
-                    dataOutputStream.write(data, offset, chunk);
+                    int chunk = (int) Math.min(CHUNK_SIZE, total - offset);
+                    dataOutputStream.write(data, (int) offset, chunk);
                     offset += chunk;
                     if (progress != null)
-                        progress.onProgress(offset * 100 / total, "Compressing...");
+                        progress.onProgress((int) (offset * 100 / total), "Compressing...");
                 }
             }
         }
@@ -295,7 +295,7 @@ public class PGPEngine {
                 for (Iterator<PGPEncryptedData> it = encList.getEncryptedDataObjects(); it.hasNext();) {
                     PGPEncryptedData ed = it.next();
                     if (ed instanceof PGPPublicKeyEncryptedData) {
-                        allIds.add(((PGPPublicKeyEncryptedData) ed).getKeyID());
+                        allIds.add(((PGPPublicKeyEncryptedData) ed).getKeyIdentifier().getKeyId());
                     }
                 }
             }
@@ -327,7 +327,7 @@ public class PGPEngine {
         private final InputStream delegate;
         private final int total;
         private final ProgressCallback progress;
-        private int count;
+        private long count;
         CountingInputStream(InputStream delegate, int total, ProgressCallback progress) {
             this.delegate = delegate;
             this.total = total;
@@ -347,7 +347,7 @@ public class PGPEngine {
         @Override public void close() throws IOException { delegate.close(); }
         private void tick() {
             if (progress != null) {
-                int pct = Math.min(count * 100 / Math.max(total, 1), 100);
+                int pct = (int) Math.min(count * 100 / Math.max(total, 1), 100);
                 progress.onProgress(pct, "Decrypting...");
             }
         }
@@ -459,7 +459,7 @@ public class PGPEngine {
         for (Iterator<PGPEncryptedData> it = encList.getEncryptedDataObjects(); it.hasNext();) {
             PGPEncryptedData ed = it.next();
             if (ed instanceof PGPPublicKeyEncryptedData) {
-                allRecipientIds.add(((PGPPublicKeyEncryptedData) ed).getKeyID());
+                allRecipientIds.add(((PGPPublicKeyEncryptedData) ed).getKeyIdentifier().getKeyId());
             }
         }
 
@@ -507,12 +507,12 @@ public class PGPEngine {
                         symAlgo = encData.getSymmetricAlgorithm(decryptorFactory);
                         clearStream = encData.getDataStream(decryptorFactory);
                     }
-                    String uid = secretKeyUserIds != null ? secretKeyUserIds.get(encData.getKeyID()) : null;
+                    String uid = secretKeyUserIds != null ? secretKeyUserIds.get(encData.getKeyIdentifier().getKeyId()) : null;
                     encLayers.add(new DecryptResult.EncryptionLayer(
                             DecryptResult.EncryptionLayer.Type.PUBLIC_KEY, symAlgo,
                             sk.getPublicKey().getAlgorithm(),
                             KeyringLoader.curveName(sk.getPublicKey()),
-                            encData.getKeyID(), allRecipientIds, uid));
+                            encData.getKeyIdentifier().getKeyId(), allRecipientIds, uid));
 
                     return clearStream;
                 } catch (Exception e) {
@@ -560,7 +560,7 @@ public class PGPEngine {
                     totalWritten += n;
                 }
             }
-            byte[] rawData = totalWritten <= Integer.MAX_VALUE && totalWritten <= 50_000_000
+            byte[] rawData = totalWritten <= 50_000_000
                     ? Files.readAllBytes(tempFile) : null;
             byte[] verifyData = rawData != null ? rawData : Files.readAllBytes(tempFile);
             // Now read the trailing signature list
@@ -691,7 +691,7 @@ public class PGPEngine {
                 }
                 totalWritten = Files.size(tempFile);
             }
-            byte[] rawData = totalWritten <= Integer.MAX_VALUE && totalWritten <= 50_000_000
+            byte[] rawData = totalWritten <= 50_000_000
                     ? Files.readAllBytes(tempFile) : null;
 
             CompoundMessage compound = null;
@@ -731,7 +731,7 @@ public class PGPEngine {
         while (it.hasNext()) {
             PGPEncryptedData ed = it.next();
             if (ed instanceof PGPPublicKeyEncryptedData
-                    && ((PGPPublicKeyEncryptedData) ed).getKeyID() == keyId) {
+                    && ((PGPPublicKeyEncryptedData) ed).getKeyIdentifier().getKeyId() == keyId) {
                 return (PGPPublicKeyEncryptedData) ed;
             }
         }
