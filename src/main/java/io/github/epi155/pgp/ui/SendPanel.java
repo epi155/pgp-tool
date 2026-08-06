@@ -530,7 +530,6 @@ public class SendPanel extends JPanel {
             case "SHA-256": return HashAlgorithmTags.SHA256;
             case "SHA-384": return HashAlgorithmTags.SHA384;
             case "SHA-512": return HashAlgorithmTags.SHA512;
-            case "RIPEMD160": return HashAlgorithmTags.RIPEMD160;
             default: return HashAlgorithmTags.SHA256;
         }
     }
@@ -1221,7 +1220,7 @@ public class SendPanel extends JPanel {
         SignerPanel() {
             super(new BorderLayout(0, 2));
             keyPanel = new KeyTreePanel("Sender Private Key (Signature)", false, true);
-            hashCombo = new JComboBox<>(new String[]{"SHA-256", "SHA-384", "SHA-512", "RIPEMD160"});
+            hashCombo = new JComboBox<>(new String[]{"SHA-256", "SHA-384", "SHA-512"});
             hashCombo.setSelectedItem("SHA-256");
             hashCombo.setEnabled(false);
 

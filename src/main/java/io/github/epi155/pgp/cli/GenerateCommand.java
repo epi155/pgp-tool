@@ -21,7 +21,7 @@ public final class GenerateCommand {
     private GenerateCommand() {}
 
     public static int run(Args args) throws Exception {
-        if (args.flag("--help")) {
+        if (args.flag("--help") || args.flag("-h")) {
             System.out.println(usage());
             return 0;
         }
@@ -246,7 +246,7 @@ public final class GenerateCommand {
     }
 
     static String usage() {
-        return "Usage: pgp-tool --generate --user-id \"Name <email>\" [options]\n"
+        return "Usage: pgp-tool -g, --generate --user-id \"Name <email>\" [options]\n"
                 + "Generate a new PGP key pair (armored .asc files) into the output directory.\n\n"
                 + "Options:\n"
                 + "  --user-id UID            Identity, e.g. \"Alice <alice@example.com>\" (required)\n"

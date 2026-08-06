@@ -12,7 +12,7 @@ public final class ListCommand {
     private ListCommand() {}
 
     public static int run(Args args) throws Exception {
-        if (args.flag("--help")) {
+        if (args.flag("--help") || args.flag("-h")) {
             System.out.println(usage());
             return 0;
         }
@@ -49,7 +49,7 @@ public final class ListCommand {
     }
 
     static String usage() {
-        return "Usage: pgp-tool --list <keyring.asc>...\n"
+        return "Usage: pgp-tool -l, --list <keyring.asc>...\n"
                 + "List the public keys (and subkeys) contained in the given keyrings.\n"
                 + "Each line shows algorithm, key ID and [S]ign/[E]ncrypt capability.\n";
     }

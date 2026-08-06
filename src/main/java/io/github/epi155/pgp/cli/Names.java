@@ -38,10 +38,9 @@ public final class Names {
             case "SHA384": return HashAlgorithmTags.SHA384;
             case "SHA-512":
             case "SHA512": return HashAlgorithmTags.SHA512;
-            case "RIPEMD160": return HashAlgorithmTags.RIPEMD160;
             default:
                 throw new CliException("Unknown hash algorithm: '" + name
-                        + "' (use SHA-256, SHA-384, SHA-512, RIPEMD160)", true);
+                        + "' (use SHA-256, SHA-384, SHA-512)", true);
         }
     }
 

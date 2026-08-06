@@ -86,8 +86,10 @@ public class PGPTool {
         System.out.println("  -h, --help       Show this help message and exit");
         System.out.println();
         System.out.println("Batch mode (no GUI):");
-        System.out.println("  --list <keyring.asc>...");
-        System.out.println("  --generate ...  --encrypt ...  --decrypt ...");
-        System.out.println("  Run a batch command with --help for its options, e.g. pgp-tool --encrypt --help");
+        System.out.println("  -l, --list <keyring.asc>...");
+        System.out.println("  -g, --generate ...");
+        System.out.println("  -e, --encrypt ...");
+        System.out.println("  -d, --decrypt ...");
+        System.out.println("  Run a batch command with -h or --help for its options, e.g. pgp-tool -e --help");
     }
 }

@@ -33,7 +33,7 @@ public final class EncryptCommand {
     private EncryptCommand() {}
 
     public static int run(Args args) throws Exception {
-        if (args.flag("--help")) {
+        if (args.flag("--help") || args.flag("-h")) {
             System.out.println(usage());
             return 0;
         }
@@ -328,7 +328,7 @@ public final class EncryptCommand {
     }
 
     static String usage() {
-        return "Usage: pgp-tool --encrypt [options] [input-file]\n"
+        return "Usage: pgp-tool -e, --encrypt [options] [input-file]\n"
                 + "Encrypt data to one or more recipients / password layers (inner to outer).\n\n"
                 + "Options:\n"
                 + "  -i, --input FILE        Input file, or - for stdin (default stdin)\n"
@@ -345,7 +345,7 @@ public final class EncryptCommand {
                 + "                            or - to read one line from stdin)\n"
                 + "  --password-file FILE    Read passwords (one per line) from FILE (or - for stdin)\n"
                 + "  --sign-key SPEC         Sign with a key: file[#id][:passphrase[:HASH]]\n"
-                + "                            HASH: SHA-256 (default), SHA-384, SHA-512, RIPEMD160\n"
+                + "                            HASH: SHA-256 (default), SHA-384, SHA-512\n"
                 + "  --passphrase P          Fallback signing passphrase (or - for stdin)\n"
                 + "  --passphrase-file FILE  Fallback signing passphrases, one per line\n"
                 + "  --compress ALGO         ZIP, ZLIB, BZIP2, UNCOMPRESSED (default ZLIB)\n"

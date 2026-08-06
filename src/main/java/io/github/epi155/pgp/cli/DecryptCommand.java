@@ -28,7 +28,7 @@ public final class DecryptCommand {
     private DecryptCommand() {}
 
     public static int run(Args args) throws Exception {
-        if (args.flag("--help")) {
+        if (args.flag("--help") || args.flag("-h")) {
             System.out.println(usage());
             return 0;
         }
@@ -276,7 +276,7 @@ public final class DecryptCommand {
     }
 
     static String usage() {
-        return "Usage: pgp-tool --decrypt [options] [input-file]\n"
+        return "Usage: pgp-tool -d, --decrypt [options] [input-file]\n"
                 + "Decrypt an encrypted message (optionally nested) and verify signatures.\n\n"
                 + "Options:\n"
                 + "  -i, --input FILE        Encrypted input, or - for stdin (default stdin)\n"
