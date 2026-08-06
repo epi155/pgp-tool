@@ -46,7 +46,7 @@ public class CustomAwarePBEDataDecryptorFactory extends PBEDataDecryptorFactory 
                 System.arraycopy(key, 0, data, 1, key.length);
                 return data;
             }
-            String name = CustomAlgorithms.jceCipherName(keyAlgorithm);
+            String name = CustomAlgorithms.eskWrapName(keyAlgorithm);
             String transformation = CustomAlgorithms.isChaCha20(keyAlgorithm)
                     ? name
                     : name + "/CFB/NoPadding";

@@ -1,5 +1,6 @@
 package io.github.epi155.pgp.cli;
 
+import io.github.epi155.pgp.service.AsconTags;
 import io.github.epi155.pgp.service.CustomAlgorithms;
 import io.github.epi155.pgp.service.CustomCompression;
 import io.github.epi155.pgp.service.SerpentTags;
@@ -31,10 +32,12 @@ public final class Names {
             case "SERPENT-256": return SerpentTags.SERPENT_256;
             case "CHACHA20":
             case "CHACHA20-POLY1305": return CustomAlgorithms.CHACHA20_POLY1305;
+            case "ASCON":
+            case "ASCON-128": return AsconTags.ASCON_128;
             default:
                 throw new CliException("Unknown symmetric algorithm: '" + name
                         + "' (use AES-128/192/256, CAST5, Blowfish, Triple-DES, Twofish, "
-                        + "Camellia-128/192/256, Serpent-128/192/256, ChaCha20-Poly1305)", true);
+                        + "Camellia-128/192/256, Serpent-128/192/256, ChaCha20-Poly1305, ASCON)", true);
         }
     }
 
@@ -46,10 +49,11 @@ public final class Names {
             case "SHA384": return HashAlgorithmTags.SHA384;
             case "SHA-512":
             case "SHA512": return HashAlgorithmTags.SHA512;
-            case "RIPEMD160": return HashAlgorithmTags.RIPEMD160;
+            case "SHA3-256": return HashAlgorithmTags.SHA3_256;
+            case "SHA3-512": return HashAlgorithmTags.SHA3_512;
             default:
                 throw new CliException("Unknown hash algorithm: '" + name
-                        + "' (use SHA-256, SHA-384, SHA-512, RIPEMD160)", true);
+                        + "' (use SHA-256, SHA-384, SHA-512, SHA3-256, SHA3-512)", true);
         }
     }
 

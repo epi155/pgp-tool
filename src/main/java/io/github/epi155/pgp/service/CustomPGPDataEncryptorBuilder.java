@@ -95,9 +95,9 @@ public class CustomPGPDataEncryptorBuilder implements PGPDataEncryptorBuilder {
 
     /**
      * Legacy CFB+MDC data decryptor for the custom tags (100-102 Serpent, reached only for old
-     * SEIPD v1 messages written before the tags switched to AEAD-EAX).
+     * SEIPD v1 messages written before the tags switched to AEAD-OCB).
      *
-     * @deprecated Read-only fallback for Serpent-CFB messages. New writes emit AEAD-EAX (tag 20 v1,
+     * @deprecated Read-only fallback for Serpent-CFB messages. New writes emit AEAD-OCB (tag 20 v1,
      *             no MDC) via {@link CustomAeadEncryptor}. Scheduled for removal around August 2027.
      */
 @Deprecated
@@ -116,7 +116,7 @@ public class CustomPGPDataEncryptorBuilder implements PGPDataEncryptorBuilder {
     }
 
     /**
-     * @deprecated Legacy CFB+MDC mode; superceded by AEAD-EAX. Scheduled for removal around August 2027.
+     * @deprecated Legacy CFB+MDC mode; superceded by AEAD-OCB. Scheduled for removal around August 2027.
      */
     @Deprecated
     private static class CustomPGPDataEncryptor implements PGPDataEncryptor, PGPDataDecryptor {

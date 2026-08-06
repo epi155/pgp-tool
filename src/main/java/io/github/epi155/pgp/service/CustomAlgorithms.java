@@ -13,7 +13,7 @@ public final class CustomAlgorithms {
     }
 
     public static boolean isCustom(int algorithm) {
-        return SerpentTags.isSerpent(algorithm) || algorithm == CHACHA20_POLY1305;
+        return SerpentTags.isSerpent(algorithm) || AsconTags.isAscon(algorithm) || algorithm == CHACHA20_POLY1305;
     }
 
     public static boolean isChaCha20(int algorithm) {
@@ -21,12 +21,15 @@ public final class CustomAlgorithms {
     }
 
     public static boolean isAead(int algorithm) {
-        return algorithm == CHACHA20_POLY1305 || SerpentTags.isSerpent(algorithm);
+        return algorithm == CHACHA20_POLY1305 || SerpentTags.isSerpent(algorithm) || AsconTags.isAscon(algorithm);
     }
 
     public static int keySizeBytes(int algorithm) {
         if (SerpentTags.isSerpent(algorithm)) {
             return SerpentTags.keySizeBits(algorithm) / 8;
+        }
+        if (AsconTags.isAscon(algorithm)) {
+            return AsconTags.keySizeBits(algorithm) / 8;
         }
         if (algorithm == CHACHA20_POLY1305) {
             return 32;
@@ -48,12 +51,36 @@ public final class CustomAlgorithms {
         if (algorithm == CHACHA20_POLY1305) {
             return "CHACHA7539";
         }
+        if (AsconTags.isAscon(algorithm)) {
+            throw new IllegalArgumentException("ASCON is AEAD-only (no JCE cipher for ESK wrapping)");
+        }
+        throw new IllegalArgumentException("not a custom tag: " + algorithm);
+    }
+
+    /**
+     * Cipher used to wrap the session key in a passphrase ESK (SKESK v4, CFB).
+     * ASCON/AEGIS-style AEAD-only ciphers have no stream mode, so they wrap through a
+     * proxy standard cipher (AES) that both the writer and the reader use.
+     */
+    public static String eskWrapName(int algorithm) {
+        if (SerpentTags.isSerpent(algorithm)) {
+            return "Serpent";
+        }
+        if (algorithm == CHACHA20_POLY1305) {
+            return "CHACHA7539";
+        }
+        if (AsconTags.isAscon(algorithm)) {
+            return "AES";
+        }
         throw new IllegalArgumentException("not a custom tag: " + algorithm);
     }
 
     public static int proxyTag(int algorithm) {
         if (SerpentTags.isSerpent(algorithm)) {
             return SerpentTags.proxyTag(algorithm);
+        }
+        if (AsconTags.isAscon(algorithm)) {
+            return AsconTags.proxyTag(algorithm);
         }
         if (algorithm == CHACHA20_POLY1305) {
             return SymmetricKeyAlgorithmTags.AES_256;
@@ -72,6 +99,9 @@ public final class CustomAlgorithms {
                     return "Serpent-256";
             }
         }
+        if (AsconTags.isAscon(algorithm)) {
+            return "ASCON";
+        }
         if (algorithm == CHACHA20_POLY1305) {
             return "ChaCha20-Poly1305";
         }
@@ -79,6 +109,9 @@ public final class CustomAlgorithms {
     }
 
     public static byte[] makeRandomKey(int algorithm, SecureRandom random) {
+        if (AsconTags.isAscon(algorithm)) {
+            return AsconTags.makeRandomKey(algorithm, random);
+        }
         byte[] key = new byte[keySizeBytes(algorithm)];
         random.nextBytes(key);
         return key;

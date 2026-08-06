@@ -518,6 +518,7 @@ public class SendPanel extends JPanel {
             case "Serpent-192": return SerpentTags.SERPENT_192;
             case "Serpent-256": return SerpentTags.SERPENT_256;
             case "ChaCha20-Poly1305": return CustomAlgorithms.CHACHA20_POLY1305;
+            case "ASCON": return AsconTags.ASCON_128;
             default: return SymmetricKeyAlgorithmTags.AES_128;
         }
     }
@@ -538,7 +539,8 @@ public class SendPanel extends JPanel {
             case "SHA-256": return HashAlgorithmTags.SHA256;
             case "SHA-384": return HashAlgorithmTags.SHA384;
             case "SHA-512": return HashAlgorithmTags.SHA512;
-            case "RIPEMD160": return HashAlgorithmTags.RIPEMD160;
+            case "SHA3-256": return HashAlgorithmTags.SHA3_256;
+            case "SHA3-512": return HashAlgorithmTags.SHA3_512;
             default: return HashAlgorithmTags.SHA256;
         }
     }
@@ -937,7 +939,7 @@ public class SendPanel extends JPanel {
             super(new BorderLayout(0, 2));
 
             usePasswordCheckBox = new JCheckBox("Use password");
-            algoCombo = new JComboBox<>(new String[]{"AES-128", "AES-192", "AES-256", "CAST5", "Blowfish", "Triple-DES", "Twofish", "Camellia-128", "Camellia-192", "Camellia-256", "Serpent-128", "Serpent-192", "Serpent-256", "ChaCha20-Poly1305"});
+            algoCombo = new JComboBox<>(new String[]{"AES-128", "AES-192", "AES-256", "CAST5", "Blowfish", "Triple-DES", "Twofish", "Camellia-128", "Camellia-192", "Camellia-256", "Serpent-128", "Serpent-192", "Serpent-256", "ChaCha20-Poly1305", "ASCON"});
             algoCombo.setSelectedItem("AES-128");
 
             // Password card — aligned top, aligned labels/fields
@@ -1222,7 +1224,7 @@ public class SendPanel extends JPanel {
         SignerPanel() {
             super(new BorderLayout(0, 2));
             keyPanel = new KeyTreePanel("Sender Private Key (Signature)", false, true);
-            hashCombo = new JComboBox<>(new String[]{"SHA-256", "SHA-384", "SHA-512", "RIPEMD160"});
+            hashCombo = new JComboBox<>(new String[]{"SHA-256", "SHA-384", "SHA-512", "SHA3-256", "SHA3-512"});
             hashCombo.setSelectedItem("SHA-256");
             hashCombo.setEnabled(false);
 

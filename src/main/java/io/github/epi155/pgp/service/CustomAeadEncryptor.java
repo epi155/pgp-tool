@@ -3,8 +3,9 @@ package io.github.epi155.pgp.service;
 import org.bouncycastle.bcpg.AEADAlgorithmTags;
 import org.bouncycastle.bcpg.AEADEncDataPacket;
 import org.bouncycastle.crypto.InvalidCipherTextException;
+import org.bouncycastle.crypto.engines.AsconEngine;
 import org.bouncycastle.crypto.engines.SerpentEngine;
-import org.bouncycastle.crypto.modes.EAXBlockCipher;
+import org.bouncycastle.crypto.modes.OCBBlockCipher;
 import org.bouncycastle.crypto.params.AEADParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.openpgp.operator.PGPAEADDataEncryptor;
@@ -24,13 +25,15 @@ import java.security.SecureRandom;
 
 /**
  * AEAD encryptor/decryptor for the custom symmetric tags (103 = ChaCha20-Poly1305,
- * 100-102 = Serpent-EAX).
+ * 100-102 = Serpent-OCB, 104 = ASCON).
  * <p>
  * Emits the LibrePGP-style AEAD Encrypted Data packet (tag 20, version 1) that BouncyCastle 1.84
  * can parse back. The {@code aeadAlgorithm} byte in the packet drives BC's IV length on read
- * ({@code AEADUtils.getIVLength}): GCM (3) -&gt; 12-byte IV for tag 103, EAX (1) -&gt; 16-byte IV for
- * tags 100-102. The actual construction is selected by the symmetric tag: JCE ChaCha20-Poly1305
- * for 103, lightweight {@link EAXBlockCipher}(SerpentEngine) for 100-102.
+ * ({@code AEADUtils.getIVLength}): GCM (3) -&gt; 12-byte IV for tag 103, OCB (2) -&gt; 15-byte IV for
+ * tags 100-102, EAX (1) -&gt; 16-byte IV for tag 104. The actual construction is selected by the
+ * symmetric tag: JCE ChaCha20-Poly1305 for 103, lightweight {@link OCBBlockCipher}
+ * (SerpentEngine, SerpentEngine) for 100-102, lightweight {@code AsconEngine} (AsconParameters)
+ * for 104.
  * <p>
  * No MDC is used: integrity is the AEAD tag, per chunk. Chunk framing is shared across all custom
  * AEAD tags and mirrors the lib-style v5 stream: per-chunk nonce = IV xor chunk index (last 8
@@ -100,11 +103,23 @@ public class CustomAeadEncryptor implements PGPAEADDataEncryptor, PGPDataDecrypt
     }
 
     private static int aeadAlgorithm(int algorithm) {
-        return CustomAlgorithms.isChaCha20(algorithm) ? AEADAlgorithmTags.GCM : AEADAlgorithmTags.EAX;
+        if (CustomAlgorithms.isChaCha20(algorithm)) {
+            return AEADAlgorithmTags.GCM;
+        }
+        if (AsconTags.isAscon(algorithm)) {
+            return AEADAlgorithmTags.EAX;
+        }
+        return AEADAlgorithmTags.OCB;
     }
 
     private static int ivLength(int algorithm) {
-        return CustomAlgorithms.isChaCha20(algorithm) ? 12 : 16;
+        if (CustomAlgorithms.isChaCha20(algorithm)) {
+            return 12;
+        }
+        if (AsconTags.isAscon(algorithm)) {
+            return 16;
+        }
+        return 15;
     }
 
     private byte[] baseAad() {
@@ -157,7 +172,10 @@ public class CustomAeadEncryptor implements PGPAEADDataEncryptor, PGPDataDecrypt
                 throw new IllegalStateException("Cannot create ChaCha20-Poly1305 cipher", e);
             }
         }
-        return new SerpentEaxEngine(key);
+        if (AsconTags.isAscon(algorithm)) {
+            return new Ascon128Engine(key);
+        }
+        return new SerpentOcbEngine(key);
     }
 
     /** JCE ChaCha20-Poly1305 (tag 103). */
@@ -196,15 +214,15 @@ public class CustomAeadEncryptor implements PGPAEADDataEncryptor, PGPDataDecrypt
         }
     }
 
-    /** Lightweight Serpent-EAX for tags 100-102. */
-    private static final class SerpentEaxEngine implements AeadEngine {
+    /** Lightweight Serpent-OCB3 for tags 100-102. */
+    private static final class SerpentOcbEngine implements AeadEngine {
 
-        private final EAXBlockCipher cipher;
+        private final OCBBlockCipher cipher;
         private final KeyParameter key;
 
-        SerpentEaxEngine(byte[] key) {
+        SerpentOcbEngine(byte[] key) {
             this.key = new KeyParameter(key);
-            this.cipher = new EAXBlockCipher(new SerpentEngine());
+            this.cipher = new OCBBlockCipher(new SerpentEngine(), new SerpentEngine());
         }
 
         @Override
@@ -224,7 +242,41 @@ public class CustomAeadEncryptor implements PGPAEADDataEncryptor, PGPDataDecrypt
             try {
                 n += cipher.doFinal(out, n);
             } catch (InvalidCipherTextException e) {
-                throw new IOException("Serpent-EAX integrity check failed", e);
+                throw new IOException("Serpent-OCB integrity check failed", e);
+            }
+            return Arrays.copyOf(out, n);
+        }
+    }
+
+    /** Lightweight ASCON-128 for tag 104 (NIST SP 800-232 family). */
+    private static final class Ascon128Engine implements AeadEngine {
+
+        private final AsconEngine cipher;
+        private final KeyParameter key;
+
+        Ascon128Engine(byte[] key) {
+            this.key = new KeyParameter(key);
+            this.cipher = new AsconEngine(AsconEngine.AsconParameters.ascon128);
+        }
+
+        @Override
+        public void init(boolean forEncryption, byte[] nonce) {
+            cipher.init(forEncryption, new AEADParameters(key, TAG_LENGTH_BITS, nonce));
+        }
+
+        @Override
+        public void updateAad(byte[] aad) {
+            cipher.processAADBytes(aad, 0, aad.length);
+        }
+
+        @Override
+        public byte[] finish(byte[] in, int off, int len) throws IOException {
+            byte[] out = new byte[len + TAG_LENGTH];
+            int n = cipher.processBytes(in, off, len, out, 0);
+            try {
+                n += cipher.doFinal(out, n);
+            } catch (InvalidCipherTextException e) {
+                throw new IOException("ASCON integrity check failed", e);
             }
             return Arrays.copyOf(out, n);
         }

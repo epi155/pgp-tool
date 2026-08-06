@@ -36,7 +36,7 @@ public class CustomPBEKeyEncryptionMethodGenerator extends PBEKeyEncryptionMetho
 
     @Override
     protected byte[] encryptSessionInfo(int keyAlgorithm, byte[] key, byte[] secKeyData) throws PGPException {
-        String name = CustomAlgorithms.jceCipherName(keyAlgorithm);
+        String name = CustomAlgorithms.eskWrapName(keyAlgorithm);
             String transformation = CustomAlgorithms.isChaCha20(keyAlgorithm)
                     ? name
                     : name + "/CFB/NoPadding";

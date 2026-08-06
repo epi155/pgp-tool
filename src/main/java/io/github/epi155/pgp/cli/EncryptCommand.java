@@ -33,7 +33,7 @@ public final class EncryptCommand {
     private EncryptCommand() {}
 
     public static int run(Args args) throws Exception {
-        if (args.flag("--help")) {
+        if (args.flag("--help") || args.flag("-h")) {
             System.out.println(usage());
             return 0;
         }
@@ -328,7 +328,7 @@ public final class EncryptCommand {
     }
 
     static String usage() {
-        return "Usage: pgp-tool --encrypt [options] [input-file]\n"
+        return "Usage: pgp-tool -e, --encrypt [options] [input-file]\n"
                 + "Encrypt data to one or more recipients / password layers (inner to outer).\n\n"
                 + "Options:\n"
                 + "  -i, --input FILE        Input file, or - for stdin (default stdin)\n"
@@ -341,12 +341,12 @@ public final class EncryptCommand {
                 + "                            0xABCDEF12, full 16-hex, or 32-hex fingerprint).\n"
                  + "                            ALGO: AES-128/192/256, CAST5, Blowfish, Triple-DES,\n"
                  + "                            Twofish, Camellia-128/192/256, Serpent-128/192/256,\n"
-                 + "                            ChaCha20-Poly1305\n"
+                 + "                            ChaCha20-Poly1305, ASCON\n"
                 + "  --password PASSWORD     Password for a PASS layer, repeatable (one per layer,\n"
                 + "                            or - to read one line from stdin)\n"
                 + "  --password-file FILE    Read passwords (one per line) from FILE (or - for stdin)\n"
                 + "  --sign-key SPEC         Sign with a key: file[#id][:passphrase[:HASH]]\n"
-                + "                            HASH: SHA-256 (default), SHA-384, SHA-512, RIPEMD160\n"
+                + "                            HASH: SHA-256 (default), SHA-384, SHA-512, SHA3-256, SHA3-512\n"
                 + "  --passphrase P          Fallback signing passphrase (or - for stdin)\n"
                 + "  --passphrase-file FILE  Fallback signing passphrases, one per line\n"
                 + "  --compress ALGO         ZIP, ZLIB, BZIP2, XZ, ZSTD, UNCOMPRESSED (default ZLIB)\n"
