@@ -123,26 +123,35 @@ public class ReceivePanel extends JPanel {
                         }
                         if (len <= 0) return false;
                         boolean bin = isBinaryContent(header, len);
-                        if (bin) {
-                            int ret = JOptionPane.showConfirmDialog(
-                                    cipherTextArea,
-                                    "The file \"" + f.getName() + "\" appears to be binary.\n"
-                                            + "Paste the content anyway?",
-                                    "Binary file detected",
-                                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-                            if (ret != JOptionPane.YES_OPTION) return false;
-                        }
                         long fileSize = f.length();
-                        if (fileSize > 1_048_576) {
-                            String sizeStr = String.format("%.1f MB", fileSize / (1024.0 * 1024.0));
-                            int ret = JOptionPane.showConfirmDialog(
+                        boolean large = fileSize > 1_048_576;
+                        if (bin || large) {
+                            StringBuilder msg = new StringBuilder();
+                            if (bin) {
+                                msg.append("The file \"").append(f.getName())
+                                        .append("\" appears to be binary.\n");
+                            }
+                            if (large) {
+                                String sizeStr = String.format("%.1f MB", fileSize / (1024.0 * 1024.0));
+                                msg.append("The file \"").append(f.getName())
+                                        .append("\" (").append(sizeStr).append(") exceeds 1 MB.\n")
+                                        .append("It would be better to handle it as a file rather than as a message.\n");
+                            }
+                            msg.append("How do you want to handle this file?");
+                            Object[] options = {"as Message", "as File", "Cancel"};
+                            int ret = JOptionPane.showOptionDialog(
                                     cipherTextArea,
-                                    "The file \"" + f.getName() + "\" (" + sizeStr + ") exceeds 1 MB.\n"
-                                            + "It would be better to handle it as a file rather than as a message.\n"
-                                            + "Paste the content anyway?",
-                                    "Large file detected",
-                                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-                            if (ret != JOptionPane.YES_OPTION) return false;
+                                    msg.toString(),
+                                    "File detected",
+                                    JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE,
+                                    null, options, options[0]);
+                            if (ret == 1) {
+                                fileRadio.setSelected(true);
+                                switchToFileMode();
+                                setCipherFile(f);
+                                return true;
+                            }
+                            if (ret != 0) return false;
                         }
                         String full = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
                         int pos = cipherTextArea.getCaretPosition();
@@ -196,9 +205,7 @@ public class ReceivePanel extends JPanel {
                     java.util.List<File> files = (java.util.List<File>) support.getTransferable()
                             .getTransferData(DataFlavor.javaFileListFlavor);
                     File f = files.get(0);
-                    cipherBytes = Files.readAllBytes(f.toPath());
-                    cipherFileField.setText(f.getAbsolutePath());
-                    clearDecryptResults();
+                    setCipherFile(f);
                     return true;
                 } catch (Exception ex) { return false; }
             }
@@ -326,19 +333,8 @@ public class ReceivePanel extends JPanel {
             engine.clearPassphraseCache();
         });
 
-        messageRadio.addActionListener(e -> {
-            cipherBytes = null;
-            cipherTextArea.setText("");
-            clearDecryptResults();
-            inputCardLayout.show(inputCardPanel, "message");
-        });
-        fileRadio.addActionListener(e -> {
-            cipherTextArea.setText("");
-            cipherFileField.setText("");
-            cipherBytes = null;
-            clearDecryptResults();
-            inputCardLayout.show(inputCardPanel, "file");
-        });
+        messageRadio.addActionListener(e -> switchToMessageMode());
+        fileRadio.addActionListener(e -> switchToFileMode());
 
         updateDecryptButton();
     }
@@ -499,6 +495,27 @@ public class ReceivePanel extends JPanel {
         cleanupTempFiles();
     }
 
+    private void switchToMessageMode() {
+        cipherBytes = null;
+        cipherTextArea.setText("");
+        clearDecryptResults();
+        inputCardLayout.show(inputCardPanel, "message");
+    }
+
+    private void switchToFileMode() {
+        cipherTextArea.setText("");
+        cipherFileField.setText("");
+        cipherBytes = null;
+        clearDecryptResults();
+        inputCardLayout.show(inputCardPanel, "file");
+    }
+
+    private void setCipherFile(File f) throws IOException {
+        cipherBytes = Files.readAllBytes(f.toPath());
+        cipherFileField.setText(f.getAbsolutePath());
+        clearDecryptResults();
+    }
+
     private void browseCipherFile(ActionEvent e) {
         JFileChooser fc = new JFileChooser();
         fc.addChoosableFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
@@ -507,9 +524,7 @@ public class ReceivePanel extends JPanel {
                 "PGP encrypted files (*.asc, *.gpg, *.pgp)", "asc", "gpg", "pgp"));
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
-                cipherBytes = Files.readAllBytes(fc.getSelectedFile().toPath());
-                cipherFileField.setText(fc.getSelectedFile().getAbsolutePath());
-                clearDecryptResults();
+                setCipherFile(fc.getSelectedFile());
             } catch (IOException ex) {
                 UIUtils.showError(this, "Error reading file:\n" + ex.getMessage(), ex);
             }
