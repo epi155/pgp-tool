@@ -9,6 +9,7 @@ public class PGPKeyInfo {
     private final long keyId;
     private final String fingerprint;
     private final String algorithm;
+    private final String curve;
     private final int bitLength;
     private final Date creationTime;
     private final boolean isMasterKey;
@@ -21,9 +22,17 @@ public class PGPKeyInfo {
     public PGPKeyInfo(long keyId, String fingerprint, String algorithm, int bitLength,
                       Date creationTime, boolean isMasterKey, boolean canSign,
                       boolean canEncrypt, List<String> userIds, Object bcKey) {
+        this(keyId, fingerprint, algorithm, null, bitLength, creationTime, isMasterKey,
+                canSign, canEncrypt, userIds, bcKey);
+    }
+
+    public PGPKeyInfo(long keyId, String fingerprint, String algorithm, String curve, int bitLength,
+                      Date creationTime, boolean isMasterKey, boolean canSign,
+                      boolean canEncrypt, List<String> userIds, Object bcKey) {
         this.keyId = keyId;
         this.fingerprint = fingerprint;
         this.algorithm = algorithm;
+        this.curve = curve;
         this.bitLength = bitLength;
         this.creationTime = creationTime;
         this.isMasterKey = isMasterKey;
@@ -38,6 +47,7 @@ public class PGPKeyInfo {
     public String getKeyIdHex() { return String.format("0x%08X", keyId); }
     public String getFingerprint() { return fingerprint; }
     public String getAlgorithm() { return algorithm; }
+    public String getCurve() { return curve; }
     public int getBitLength() { return bitLength; }
     public Date getCreationTime() { return creationTime; }
     public boolean isMasterKey() { return isMasterKey; }
@@ -55,6 +65,7 @@ public class PGPKeyInfo {
         String ts = new SimpleDateFormat("yyyy-MM-dd").format(creationTime);
         StringBuilder sb = new StringBuilder();
         sb.append(algorithm).append(" ").append(bitLength).append("b");
+        if (curve != null) sb.append(" (").append(curve).append(")");
         sb.append(" ").append(getKeyIdHex());
         if (isMasterKey) {
             sb.append(" [");

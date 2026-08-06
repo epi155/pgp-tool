@@ -17,6 +17,18 @@
 
 Flags are parsed in `PGPTool.main()`.
 
+## Command-line interface (CLI)
+
+Backported from `dev` to `master-backport`, **limited to standard PGP** (no custom Serpent-EAX, ChaCha20, XZ/ZSTD). Entry: `PGPTool.main()` dispatches subcommands in `cli/`.
+
+- `--generate` — create a keyring: `--subkey` spec `RSA-2[048]|EC-secp(256|384|521)r1|EC-brainpool(P256|P384|P512)r1|Ed25519|Ed448|X25519|X448 [:(sign|encrypt|certify)[:exp]]`
+- `--encrypt` — layers `KEY:file[#id][;file2]:ALGO` and `PASS:ALGO`, inner→outer. ALGO limited to standard: AES-128/192/256, CAST5, Blowfish, Triple-DES, Twofish, Camellia-128/192/256. `--compress` limited to ZIP, ZLIB, BZIP2, UNCOMPRESSED (default ZLIB).
+- `--decrypt` — `--secret-key file[:pass]`, `--verify-key` (public), `--password` (outermost-first)
+- `--list` — list keys/infos from a keyring
+- Signing: `--sign-key SPEC` (`file[#id][:pass[:HASH]]`), hash options SHA-256/SHA-384/SHA-512/RIPEMD160.
+
+CLI algorithm/compression mappings live in `cli/Names.java`; keep them standard-only on this branch.
+
 ## Key architecture facts
 
 - **Java 11**, Swing GUI, **Bouncy Castle 1.84** (`bcprov-jdk18on`, `bcpg-jdk18on`)
