@@ -65,9 +65,8 @@ public class PGPEngine {
                 methods.add(createPublicKeyMethod(key));
             }
             try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
-                try (OutputStream zipOut = openCompressedData(encOut, compressionAlgorithm)) {
-                    writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
-                }
+                writeInnerLayer(encOut, data, fileName, signKeys, signPassphrases,
+                        compressionAlgorithm, hashAlgorithms, progress);
             }
         }
     }
@@ -109,9 +108,8 @@ public class PGPEngine {
             List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
             methods.add(createPBEMethod(password, symmetricAlgorithm));
             try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
-                try (OutputStream zipOut = openCompressedData(encOut, compressionAlgorithm)) {
-                    writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
-                }
+                writeInnerLayer(encOut, data, fileName, signKeys, signPassphrases,
+                        compressionAlgorithm, hashAlgorithms, progress);
             }
         }
     }
@@ -143,6 +141,20 @@ public class PGPEngine {
         return new PGPCompressedDataGenerator(compressionAlgorithm).open(out);
     }
 
+    private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
+                                  List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
+                                  int compressionAlgorithm,
+                                  List<Integer> hashAlgorithms,
+                                  ProgressCallback progress) throws Exception {
+        if (compressionAlgorithm == CompressionAlgorithmTags.UNCOMPRESSED) {
+            writeSignAndLiteral(out, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
+        } else {
+            try (OutputStream zipOut = openCompressedData(out, compressionAlgorithm)) {
+                writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
+            }
+        }
+    }
+
     private PGPKeyEncryptionMethodGenerator createPublicKeyMethod(PGPPublicKey key) {
         int keyAlgo = key.getAlgorithm();
         if (keyAlgo == PublicKeyAlgorithmTags.ECDH
@@ -166,9 +178,8 @@ public class PGPEngine {
                                  List<Integer> hashAlgorithms, boolean armor,
                                  ProgressCallback progress) throws Exception {
         try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
-            try (OutputStream zipOut = openCompressedData(armored, compressionAlgorithm)) {
-                writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
-            }
+            writeInnerLayer(armored, data, fileName, signKeys, signPassphrases,
+                    compressionAlgorithm, hashAlgorithms, progress);
         }
     }
 
