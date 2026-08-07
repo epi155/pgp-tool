@@ -379,6 +379,7 @@ public class PGPEngine {
         }
 
         // Inner content
+        Object firstContent = message;
         if (message instanceof PGPCompressedData) {
             PGPCompressedData compData = (PGPCompressedData) message;
             metaBuilder.compressionAlgorithm(compData.getAlgorithm());
@@ -386,6 +387,7 @@ public class PGPEngine {
                     ? CustomCompression.decompress(compData.getInputStream(), compData.getAlgorithm())
                     : compData.getDataStream();
             plainFact = new JcaPGPObjectFactory(compStream);
+            firstContent = null;
         }
 
         // Build final Metadata with encryption layers info
@@ -411,7 +413,7 @@ public class PGPEngine {
             }
         }
 
-        return parseCompressedToFile(plainFact, metaBuilder, tempFile,
+        return parseCompressedToFile(plainFact, firstContent, metaBuilder, tempFile,
                 publicKeys, publicKeyUserIdByKeyId, decodeText);
     }
 
@@ -534,12 +536,13 @@ public class PGPEngine {
     // ─── parseCompressed → temp file ─────────────────────────────
 
     private DecryptResult parseCompressedToFile(JcaPGPObjectFactory plainFact,
+                                                  Object firstContent,
                                                   DecryptResult.Metadata.Builder metaBuilder,
                                                   Path tempFile,
                                                   List<PGPPublicKey> publicKeys,
                                                   Map<Long, String> publicKeyUserIdByKeyId,
                                                   boolean decodeText) throws Exception {
-        Object message = plainFact.nextObject();
+        Object message = firstContent != null ? firstContent : plainFact.nextObject();
 
         if (message instanceof PGPOnePassSignatureList) {
             PGPOnePassSignatureList opsList = (PGPOnePassSignatureList) message;
