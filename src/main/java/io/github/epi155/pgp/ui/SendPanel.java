@@ -4,8 +4,7 @@ import io.github.epi155.pgp.model.CompoundCodec;
 import io.github.epi155.pgp.model.CompoundMessage;
 import io.github.epi155.pgp.model.KeyBundle;
 import io.github.epi155.pgp.model.PGPKeyInfo;
-import io.github.epi155.pgp.service.KeyringLoader;
-import io.github.epi155.pgp.service.PGPEngine;
+import io.github.epi155.pgp.service.*;
 import org.bouncycastle.bcpg.CompressionAlgorithmTags;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
@@ -71,7 +70,7 @@ public class SendPanel extends JPanel {
         setLayout(new BorderLayout(5, 5));
 
         encCheckBox = new JCheckBox("Enc", true);
-        compAlgoCombo = new JComboBox<>(new String[]{"ZIP", "ZLIB", "BZIP2", "None"});
+        compAlgoCombo = new JComboBox<>(new String[]{"ZIP", "ZLIB", "BZIP2", "XZ", "ZSTD", "None"});
         compAlgoCombo.setSelectedItem("ZLIB");
         compAlgoCombo.setEnabled(false);
 
@@ -512,6 +511,14 @@ public class SendPanel extends JPanel {
             case "Blowfish": return SymmetricKeyAlgorithmTags.BLOWFISH;
             case "Triple-DES": return SymmetricKeyAlgorithmTags.TRIPLE_DES;
             case "Twofish": return SymmetricKeyAlgorithmTags.TWOFISH;
+            case "Camellia-128": return SymmetricKeyAlgorithmTags.CAMELLIA_128;
+            case "Camellia-192": return SymmetricKeyAlgorithmTags.CAMELLIA_192;
+            case "Camellia-256": return SymmetricKeyAlgorithmTags.CAMELLIA_256;
+            case "Serpent-128": return SerpentTags.SERPENT_128;
+            case "Serpent-192": return SerpentTags.SERPENT_192;
+            case "Serpent-256": return SerpentTags.SERPENT_256;
+            case "ChaCha20-Poly1305": return CustomAlgorithms.CHACHA20_POLY1305;
+            case "ASCON": return AsconTags.ASCON_128;
             default: return SymmetricKeyAlgorithmTags.AES_128;
         }
     }
@@ -521,6 +528,8 @@ public class SendPanel extends JPanel {
             case "ZLIB": return CompressionAlgorithmTags.ZLIB;
             case "ZIP": return CompressionAlgorithmTags.ZIP;
             case "BZIP2": return CompressionAlgorithmTags.BZIP2;
+            case "XZ": return CustomCompression.XZ;
+            case "ZSTD": return CustomCompression.ZSTD;
             default: return CompressionAlgorithmTags.UNCOMPRESSED;
         }
     }
@@ -530,6 +539,8 @@ public class SendPanel extends JPanel {
             case "SHA-256": return HashAlgorithmTags.SHA256;
             case "SHA-384": return HashAlgorithmTags.SHA384;
             case "SHA-512": return HashAlgorithmTags.SHA512;
+            case "SHA3-256": return HashAlgorithmTags.SHA3_256;
+            case "SHA3-512": return HashAlgorithmTags.SHA3_512;
             default: return HashAlgorithmTags.SHA256;
         }
     }
@@ -891,13 +902,11 @@ public class SendPanel extends JPanel {
                     } catch (Exception ex) {
                         Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                         if (cause.getMessage() != null && cause.getMessage().contains("checksum")) {
-                            JOptionPane.showMessageDialog(SendPanel.this, "Wrong password for private key.",
-                                    "Error", JOptionPane.ERROR_MESSAGE);
+                            UIUtils.showError(SendPanel.this, "Wrong password for private key.", cause);
                             if (!fSignKeys.isEmpty()) engine.clearPassphraseCache();
                         } else {
-                            JOptionPane.showMessageDialog(SendPanel.this,
-                                    "Error during encryption:\n" + cause.getMessage(),
-                                    "Error", JOptionPane.ERROR_MESSAGE);
+                            UIUtils.showError(SendPanel.this,
+                                    "Error during encryption:\n" + cause.getMessage(), cause);
             }
         }
     }
@@ -905,14 +914,11 @@ public class SendPanel extends JPanel {
             worker.execute();
             progress.setVisible(true);
         } catch (Exception ex) {
-            ex.printStackTrace();
             if (ex.getMessage() != null && ex.getMessage().contains("checksum")) {
-                JOptionPane.showMessageDialog(this, "Wrong password for private key.",
-                        "Error", JOptionPane.ERROR_MESSAGE);
+                UIUtils.showError(this, "Wrong password for private key.", ex);
                 if (!signKeys.isEmpty()) engine.clearPassphraseCache();
             } else {
-                JOptionPane.showMessageDialog(this, "Error during encryption:\n" + ex.getMessage(),
-                        "Error", JOptionPane.ERROR_MESSAGE);
+                UIUtils.showError(this, "Error during encryption:\n" + ex.getMessage(), ex);
             }
         }
     }
@@ -933,7 +939,7 @@ public class SendPanel extends JPanel {
             super(new BorderLayout(0, 2));
 
             usePasswordCheckBox = new JCheckBox("Use password");
-            algoCombo = new JComboBox<>(new String[]{"AES-128", "AES-192", "AES-256", "CAST5", "Blowfish", "Triple-DES", "Twofish"});
+            algoCombo = new JComboBox<>(new String[]{"AES-128", "AES-192", "AES-256", "CAST5", "Blowfish", "Triple-DES", "Twofish", "Camellia-128", "Camellia-192", "Camellia-256", "Serpent-128", "Serpent-192", "Serpent-256", "ChaCha20-Poly1305", "ASCON"});
             algoCombo.setSelectedItem("AES-128");
 
             // Password card — aligned top, aligned labels/fields
@@ -1024,9 +1030,8 @@ public class SendPanel extends JPanel {
                 userFilterField.setText("");
                 updateFilterField();
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(SendPanel.this,
-                    "Error loading public key:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+                UIUtils.showError(SendPanel.this,
+                    "Error loading public key:\n" + ex.getMessage(), ex);
             }
             updateEncryptButton();
             updateShowViewButton();
@@ -1042,9 +1047,8 @@ public class SendPanel extends JPanel {
                 updateEncryptButton();
                 updateShowViewButton();
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(SendPanel.this,
-                    "Error loading public key:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+                UIUtils.showError(SendPanel.this,
+                    "Error loading public key:\n" + ex.getMessage(), ex);
             }
         }
 
@@ -1220,7 +1224,7 @@ public class SendPanel extends JPanel {
         SignerPanel() {
             super(new BorderLayout(0, 2));
             keyPanel = new KeyTreePanel("Sender Private Key (Signature)", false, true);
-            hashCombo = new JComboBox<>(new String[]{"SHA-256", "SHA-384", "SHA-512"});
+            hashCombo = new JComboBox<>(new String[]{"SHA-256", "SHA-384", "SHA-512", "SHA3-256", "SHA3-512"});
             hashCombo.setSelectedItem("SHA-256");
             hashCombo.setEnabled(false);
 
@@ -1246,9 +1250,8 @@ public class SendPanel extends JPanel {
                 keyringPath = file.getAbsolutePath();
                 keyPanel.selectDefaultIfEmpty();
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(SendPanel.this,
-                    "Error loading private key:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+                UIUtils.showError(SendPanel.this,
+                    "Error loading private key:\n" + ex.getMessage(), ex);
             }
             updateSignCheckbox();
         }

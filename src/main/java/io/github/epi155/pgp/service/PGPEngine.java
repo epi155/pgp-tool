@@ -116,6 +116,13 @@ public class PGPEngine {
 
     private OutputStream openEncrypt(int symmetricAlgorithm, OutputStream out,
                                      List<PGPKeyEncryptionMethodGenerator> methods) throws Exception {
+        if (CustomAlgorithms.isCustom(symmetricAlgorithm)) {
+            CustomEncryptedDataGenerator gen = new CustomEncryptedDataGenerator(symmetricAlgorithm, new SecureRandom());
+            for (PGPKeyEncryptionMethodGenerator method : methods) {
+                gen.addMethod(method);
+            }
+            return gen.open(out);
+        }
         PGPEncryptedDataGenerator gen = new PGPEncryptedDataGenerator(
                 new JcePGPDataEncryptorBuilder(symmetricAlgorithm)
                         .setWithIntegrityPacket(true)
@@ -128,6 +135,9 @@ public class PGPEngine {
     }
 
     private OutputStream openCompressedData(OutputStream out, int compressionAlgorithm) throws IOException {
+        if (CustomCompression.isCustom(compressionAlgorithm)) {
+            return new CustomCompressedDataGenerator(compressionAlgorithm).open(out);
+        }
         return new PGPCompressedDataGenerator(compressionAlgorithm).open(out);
     }
 
@@ -156,6 +166,9 @@ public class PGPEngine {
     }
 
     private PGPKeyEncryptionMethodGenerator createPBEMethod(char[] password, int symmetricAlgorithm) {
+        if (CustomAlgorithms.isCustom(symmetricAlgorithm)) {
+            return new CustomPBEKeyEncryptionMethodGenerator(password);
+        }
         return new JcePBEKeyEncryptionMethodGenerator(password).setProvider("BC");
     }
 
@@ -173,7 +186,8 @@ public class PGPEngine {
     // ─── hash algorithm override per key type ─────────────────────
 
     private static int defaultHashForAlgo(int keyAlgorithm, int fallback) {
-        if (keyAlgorithm == PublicKeyAlgorithmTags.Ed25519) return HashAlgorithmTags.SHA512;
+        if (keyAlgorithm == PublicKeyAlgorithmTags.Ed25519
+                || keyAlgorithm == PublicKeyAlgorithmTags.EDDSA_LEGACY) return HashAlgorithmTags.SHA512;
         if (keyAlgorithm == PublicKeyAlgorithmTags.Ed448) return Ed448PGPContentSignerBuilder.SHAKE256;
         return fallback;
     }
@@ -380,7 +394,9 @@ public class PGPEngine {
         if (message instanceof PGPCompressedData) {
             PGPCompressedData compData = (PGPCompressedData) message;
             metaBuilder.compressionAlgorithm(compData.getAlgorithm());
-            InputStream compStream = compData.getDataStream();
+            InputStream compStream = CustomCompression.isCustom(compData.getAlgorithm())
+                    ? CustomCompression.decompress(compData.getInputStream(), compData.getAlgorithm())
+                    : compData.getDataStream();
             plainFact = new JcaPGPObjectFactory(compStream);
             firstContent = null;
         }
@@ -423,7 +439,7 @@ public class PGPEngine {
                 PGPEncryptedData ed = it.next();
                 if (ed instanceof PGPPBEEncryptedData) {
                     char[] password = pbePasswords.remove(0);
-                    PBEDataDecryptorFactory pbeFactory = new JcePBEDataDecryptorFactoryBuilder().build(password);
+                    PBEDataDecryptorFactory pbeFactory = new CustomAwarePBEDataDecryptorFactory(password);
                     int symAlgo = ((PGPPBEEncryptedData) ed).getSymmetricAlgorithm(pbeFactory);
                     encLayers.add(new DecryptResult.EncryptionLayer(
                             DecryptResult.EncryptionLayer.Type.PASSWORD, symAlgo, 0,
@@ -442,7 +458,7 @@ public class PGPEngine {
                     if (password == null) {
                         throw new PGPException("Password prompt cancelled");
                     }
-                    PBEDataDecryptorFactory pbeFactory = new JcePBEDataDecryptorFactoryBuilder().build(password);
+                    PBEDataDecryptorFactory pbeFactory = new CustomAwarePBEDataDecryptorFactory(password);
                     int symAlgo = ((PGPPBEEncryptedData) ed).getSymmetricAlgorithm(pbeFactory);
                     encLayers.add(new DecryptResult.EncryptionLayer(
                             DecryptResult.EncryptionLayer.Type.PASSWORD, symAlgo, 0,
@@ -494,12 +510,14 @@ public class PGPEngine {
                     InputStream clearStream;
                     int symAlgo;
                     try {
-                        PublicKeyDataDecryptorFactory decryptorFactory = new JcePublicKeyDataDecryptorFactoryBuilder()
-                                        .setProvider("BC").build(privateKey);
+                        PublicKeyDataDecryptorFactory decryptorFactory = new CustomAwarePublicKeyDataDecryptorFactory(
+                                new JcePublicKeyDataDecryptorFactoryBuilder()
+                                        .setProvider("BC").build(privateKey));
                         symAlgo = encData.getSymmetricAlgorithm(decryptorFactory);
                         clearStream = encData.getDataStream(decryptorFactory);
                     } catch (Exception e) {
-                        PublicKeyDataDecryptorFactory decryptorFactory = new BcPublicKeyDataDecryptorFactory(privateKey);
+                        PublicKeyDataDecryptorFactory decryptorFactory = new CustomAwarePublicKeyDataDecryptorFactory(
+                                new BcPublicKeyDataDecryptorFactory(privateKey));
                         symAlgo = encData.getSymmetricAlgorithm(decryptorFactory);
                         clearStream = encData.getDataStream(decryptorFactory);
                     }

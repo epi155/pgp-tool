@@ -498,6 +498,10 @@ public class DecryptResult {
                 case 9: return "SHA-384";
                 case 10: return "SHA-512";
                 case 11: return "SHA-224";
+                case 12: return "SHA3-256";
+                case 13: return "SHA3-384";
+                case 14: return "SHA3-512";
+                case 15: return "SHA3-224";
                 case 27: return "SHAKE256";
                 default: return "Hash#" + algo;
             }
@@ -522,6 +526,7 @@ public class DecryptResult {
                 case 101: return "Serpent-192";
                 case 102: return "Serpent-256";
                 case 103: return "ChaCha20-Poly1305";
+                case 104: return "ASCON";
                 default: return "Algo#" + algo;
             }
         }

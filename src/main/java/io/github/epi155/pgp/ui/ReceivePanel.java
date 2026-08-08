@@ -165,8 +165,7 @@ public class ReceivePanel extends JPanel {
                     try {
                         String text = (String) support.getTransferable()
                                 .getTransferData(DataFlavor.stringFlavor);
-                        int pos = cipherTextArea.getCaretPosition();
-                        cipherTextArea.getDocument().insertString(pos, text, null);
+                        cipherTextArea.replaceSelection(text);
                         return true;
                     } catch (Exception ex) {
                         return false;
@@ -367,8 +366,7 @@ public class ReceivePanel extends JPanel {
             publicKeyringPaths.clear();
             publicKeyringPaths.add(file.getAbsolutePath());
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Error loading public keys:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+            UIUtils.showError(this, "Error loading public keys:\n" + ex.getMessage(), ex);
         }
         updateDecryptButton();
         updateShowUsedButton();
@@ -395,8 +393,7 @@ public class ReceivePanel extends JPanel {
             updateDecryptButton();
             updateShowUsedButton();
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Error loading public keys:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+            UIUtils.showError(this, "Error loading public keys:\n" + ex.getMessage(), ex);
         }
     }
 
@@ -416,8 +413,7 @@ public class ReceivePanel extends JPanel {
             privateKeyringPaths.clear();
             privateKeyringPaths.add(file.getAbsolutePath());
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Error loading private keys:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+            UIUtils.showError(this, "Error loading private keys:\n" + ex.getMessage(), ex);
         }
         updateDecryptButton();
         updateShowUsedButton();
@@ -441,8 +437,7 @@ public class ReceivePanel extends JPanel {
             updateDecryptButton();
             updateShowUsedButton();
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Error loading private keys:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
+            UIUtils.showError(this, "Error loading private keys:\n" + ex.getMessage(), ex);
         }
     }
 
@@ -531,8 +526,7 @@ public class ReceivePanel extends JPanel {
             try {
                 setCipherFile(fc.getSelectedFile());
             } catch (IOException ex) {
-                JOptionPane.showMessageDialog(this, "Error reading file:\n" + ex.getMessage(),
-                        "Error", JOptionPane.ERROR_MESSAGE);
+                UIUtils.showError(this, "Error reading file:\n" + ex.getMessage(), ex);
             }
         }
     }
@@ -547,8 +541,7 @@ public class ReceivePanel extends JPanel {
             try {
                 att.saveTo(fc.getSelectedFile().toPath());
             } catch (IOException ex) {
-                JOptionPane.showMessageDialog(this, "Error saving attachment:\n" + ex.getMessage(),
-                        "Error", JOptionPane.ERROR_MESSAGE);
+                UIUtils.showError(this, "Error saving attachment:\n" + ex.getMessage(), ex);
             }
         }
     }
@@ -695,25 +688,21 @@ public class ReceivePanel extends JPanel {
                 try {
                     handleDecryptResult(get(), isBinary);
                 } catch (Exception ex) {
-                    ex.printStackTrace();
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     String msg = cause.getMessage();
                     if (msg != null && msg.contains("checksum")) {
-                        JOptionPane.showMessageDialog(ReceivePanel.this,
-                                "Wrong password for private key.",
-                                "Error", JOptionPane.ERROR_MESSAGE);
+                        UIUtils.showError(ReceivePanel.this,
+                                "Wrong password for private key.", cause);
                         engine.clearPassphraseCache();
                     } else if (msg != null && msg.contains("No matching private key")) {
-                        JOptionPane.showMessageDialog(ReceivePanel.this,
-                                msg, "Error", JOptionPane.ERROR_MESSAGE);
+                        UIUtils.showError(ReceivePanel.this,
+                                msg, cause);
                     } else if (msg != null && msg.contains("Password required")) {
-                        JOptionPane.showMessageDialog(ReceivePanel.this,
-                                "Wrong password for encrypted layer.",
-                                "Error", JOptionPane.ERROR_MESSAGE);
+                        UIUtils.showError(ReceivePanel.this,
+                                "Wrong password for encrypted layer.", cause);
                     } else {
-                        JOptionPane.showMessageDialog(ReceivePanel.this,
-                                "Error during decryption:\n" + msg,
-                                "Error", JOptionPane.ERROR_MESSAGE);
+                        UIUtils.showError(ReceivePanel.this,
+                                "Error during decryption:\n" + msg, cause);
                     }
                 }
             }
@@ -779,8 +768,7 @@ public class ReceivePanel extends JPanel {
                     plainTextArea.setText("[Decrypted file saved to: " + dest + "]");
                     saveAttachButton.setEnabled(false);
                 } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this, "Error saving file:\n" + ex.getMessage(),
-                            "Error", JOptionPane.ERROR_MESSAGE);
+                    UIUtils.showError(this, "Error saving file:\n" + ex.getMessage(), ex);
                     plainTextArea.setText("[Error saving file. Use 'Save attachment' to retry.]");
                     wrapBinaryAsAttachment(result, origName, tempPath, rawContent);
                 }
