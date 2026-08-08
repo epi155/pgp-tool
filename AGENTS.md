@@ -14,7 +14,7 @@
 | Flag | Effect |
 |------|--------|
 | `-k` / `--key` | Show key generation tab |
-| `--advanced` / `--expert` | Enable multi-signer + multi-layer encryption UI |
+| `-a` / `--advanced` | Enable multi-signer + multi-layer encryption UI |
 | `-h` / `--help` | Print usage |
 
 GUI flags are parsed in `PGPTool.main()`. `BouncyCastleProvider` is registered for **both** GUI and CLI paths.

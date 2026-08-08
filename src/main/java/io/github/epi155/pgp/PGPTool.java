@@ -30,8 +30,8 @@ public class PGPTool {
                 case "--key":
                     showKeyTab = true;
                     break;
+                case "-a":
                 case "--advanced":
-                case "--expert":
                     advanced = true;
                     break;
                 default:
@@ -81,8 +81,7 @@ public class PGPTool {
         System.out.println();
         System.out.println("Options:");
         System.out.println("  -k, --key        Enable the Key generation tab");
-        System.out.println("  --advanced       Enable advanced multi-signer and multi-layer encryption");
-        System.out.println("  --expert         Same as --advanced");
+        System.out.println("  -a, --advanced   Enable advanced multi-signer and multi-layer encryption");
         System.out.println("  -h, --help       Show this help message and exit");
         System.out.println();
         System.out.println("Batch mode (no GUI):");
