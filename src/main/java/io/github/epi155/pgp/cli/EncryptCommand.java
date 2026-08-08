@@ -32,9 +32,9 @@ public final class EncryptCommand {
 
     private EncryptCommand() {}
 
-    public static int run(Args args) throws Exception {
+    public static int run(Args args, boolean privateExtensions) throws Exception {
         if (args.flag("--help") || args.flag("-h")) {
-            System.out.println(usage());
+            System.out.println(usage(privateExtensions));
             return 0;
         }
         boolean quiet = false;
@@ -87,7 +87,7 @@ public final class EncryptCommand {
                     attachFiles.add(args.value("--attach"));
                     break;
                 case "--compress":
-                    compress = Names.compression(args.value("--compress"));
+                    compress = Names.compression(args.value("--compress"), privateExtensions);
                     break;
                 case "--armor":
                     args.flag("--armor");
@@ -155,7 +155,7 @@ public final class EncryptCommand {
 
         List<SignSpec> signSpecs = new ArrayList<>();
         for (String token : signTokens) {
-            signSpecs.add(parseSignToken(token, passFallback));
+            signSpecs.add(parseSignToken(token, passFallback, privateExtensions));
         }
 
         List<PGPSecretKey> signKeys = new ArrayList<>();
@@ -174,7 +174,7 @@ public final class EncryptCommand {
         List<Layer> layers = new ArrayList<>();
         int passIndex = 0;
         for (String token : layerTokens) {
-            Layer layer = parseLayer(token);
+            Layer layer = parseLayer(token, privateExtensions);
             if (layer.isPass) {
                 if (passIndex >= passwordPool.size()) {
                     throw new CliException("Not enough passwords for PASS layers (provided "
@@ -252,7 +252,7 @@ public final class EncryptCommand {
         return 0;
     }
 
-    private static Layer parseLayer(String token) throws CliException {
+    private static Layer parseLayer(String token, boolean privateExtensions) throws CliException {
         int colon = token.indexOf(':');
         if (colon <= 0) {
             throw new CliException("Invalid --layer '" + token
@@ -263,7 +263,7 @@ public final class EncryptCommand {
         Layer layer = new Layer();
         if (kind.equals("PASS")) {
             layer.isPass = true;
-            layer.symAlgo = Names.symmetric(rest);
+            layer.symAlgo = Names.symmetric(rest, privateExtensions);
             return layer;
         }
         if (kind.equals("KEY")) {
@@ -273,7 +273,7 @@ public final class EncryptCommand {
                         + "' (expected KEY:file[#id][;file2[#id]]:ALGO)", true);
             }
             layer.isPass = false;
-            layer.symAlgo = Names.symmetric(rest.substring(lastColon + 1));
+            layer.symAlgo = Names.symmetric(rest.substring(lastColon + 1), privateExtensions);
             List<PGPPublicKey> keys = new ArrayList<>();
             Set<Long> seen = new HashSet<>();
             for (String source : rest.substring(0, lastColon).split(";")) {
@@ -293,7 +293,7 @@ public final class EncryptCommand {
         throw new CliException("Invalid --layer kind '" + kind + "' (use KEY or PASS)", true);
     }
 
-    private static SignSpec parseSignToken(String token, List<String> passFallback) throws CliException {
+    private static SignSpec parseSignToken(String token, List<String> passFallback, boolean privateExtensions) throws CliException {
         SignSpec spec = new SignSpec();
         String body = token;
         String hashName = "SHA-256";
@@ -302,7 +302,7 @@ public final class EncryptCommand {
             hashName = token.substring(lastColon + 1);
             body = token.substring(0, lastColon);
         }
-        spec.hash = Names.hash(hashName);
+        spec.hash = Names.hash(hashName, privateExtensions);
         int firstColon = body.indexOf(':');
         String fileToken;
         if (firstColon >= 0) {
@@ -327,7 +327,13 @@ public final class EncryptCommand {
         return file != null ? file + ": " : "";
     }
 
-    static String usage() {
+    static String usage(boolean privateExtensions) {
+        String extraSym = privateExtensions ? ", Serpent-128/192/256, ChaCha20-Poly1305, ASCON" : "";
+        String extraHash = privateExtensions ? ", SHA3-256, SHA3-512" : "";
+        String extraComp = privateExtensions ? ", XZ, ZSTD" : "";
+        String privNote = privateExtensions ? ""
+                : "\n                (pass -p/--private to enable Serpent, ChaCha20-Poly1305, ASCON\n"
+                + "                ciphers, XZ/ZSTD compression and SHA3 hashes)\n";
         return "Usage: pgp-tool -e, --encrypt [options] [input-file]\n"
                 + "Encrypt data to one or more recipients / password layers (inner to outer).\n\n"
                 + "Options:\n"
@@ -339,17 +345,20 @@ public final class EncryptCommand {
                 + "                            With no #id every encryption-capable key in the\n"
                 + "                            keyring is used; #id selects exactly one (short\n"
                 + "                            0xABCDEF12, full 16-hex, or 32-hex fingerprint).\n"
-                 + "                            ALGO: AES-128/192/256, CAST5, Blowfish, Triple-DES,\n"
-                 + "                            Twofish, Camellia-128/192/256, Serpent-128/192/256,\n"
-                 + "                            ChaCha20-Poly1305, ASCON\n"
+                + "                            ALGO: AES-128/192/256, CAST5, Blowfish, Triple-DES,\n"
+                + "                            Twofish, Camellia-128/192/256"
+                + extraSym + "\n"
+                + privNote
                 + "  --password PASSWORD     Password for a PASS layer, repeatable (one per layer,\n"
                 + "                            or - to read one line from stdin)\n"
                 + "  --password-file FILE    Read passwords (one per line) from FILE (or - for stdin)\n"
                 + "  --sign-key SPEC         Sign with a key: file[#id][:passphrase[:HASH]]\n"
-                + "                            HASH: SHA-256 (default), SHA-384, SHA-512, SHA3-256, SHA3-512\n"
+                + "                            HASH: SHA-256 (default), SHA-384, SHA-512"
+                + extraHash + "\n"
                 + "  --passphrase P          Fallback signing passphrase (or - for stdin)\n"
                 + "  --passphrase-file FILE  Fallback signing passphrases, one per line\n"
-                + "  --compress ALGO         ZIP, ZLIB, BZIP2, XZ, ZSTD, UNCOMPRESSED (default ZLIB)\n"
+                + "  --compress ALGO         ZIP, ZLIB, BZIP2"
+                + extraComp + ", UNCOMPRESSED (default ZLIB)\n"
                 + "  --attach FILE           Attach FILE (repeatable) in a compound message\n"
                 + "  --armor / --no-armor    ASCII armor the output (default armor)\n"
                 + "  --force                 Overwrite the output file if it exists\n"

@@ -9,18 +9,32 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import javax.swing.*;
 import javax.swing.plaf.metal.MetalLookAndFeel;
 import java.security.Security;
+import java.util.ArrayList;
+import java.util.List;
 
 public class PGPTool {
     public static void main(String[] args) {
         AppLog.init();
         Security.addProvider(new BouncyCastleProvider());
-        if (args.length > 0 && Cli.isCommand(args[0])) {
-            System.exit(runCli(args));
+
+        boolean privateExtensions = false;
+        List<String> filtered = new ArrayList<>();
+        for (String arg : args) {
+            if (arg.equals("-p") || arg.equals("--private")) {
+                privateExtensions = true;
+            } else {
+                filtered.add(arg);
+            }
+        }
+        String[] rest = filtered.toArray(new String[0]);
+
+        if (rest.length > 0 && Cli.isCommand(rest[0])) {
+            System.exit(runCli(rest, privateExtensions));
             return;
         }
         boolean showKeyTab = false;
         boolean advanced = false;
-        for (String arg : args) {
+        for (String arg : rest) {
             switch (arg) {
                 case "-h":
                 case "--help":
@@ -53,15 +67,16 @@ public class PGPTool {
 
         boolean keyTab = showKeyTab;
         boolean adv = advanced;
+        boolean priv = privateExtensions;
         SwingUtilities.invokeLater(() -> {
-            MainFrame frame = new MainFrame(keyTab, adv);
+            MainFrame frame = new MainFrame(keyTab, adv, priv);
             frame.setVisible(true);
         });
     }
 
-    private static int runCli(String[] args) {
+    private static int runCli(String[] args, boolean privateExtensions) {
         try {
-            return Cli.run(args);
+            return Cli.run(args, privateExtensions);
         } catch (CliException e) {
             System.err.println("pgp-tool: " + e.getMessage());
             if (e.isUsage()) {
@@ -82,6 +97,8 @@ public class PGPTool {
         System.out.println("Options:");
         System.out.println("  -k, --key        Enable the Key generation tab");
         System.out.println("  -a, --advanced   Enable advanced multi-signer and multi-layer encryption");
+        System.out.println("  -p, --private    Enable private extension algorithms (Serpent, ChaCha20-Poly1305,");
+        System.out.println("                    ASCON ciphers, XZ/ZSTD compression, SHA3 hashes)");
         System.out.println("  -h, --help       Show this help message and exit");
         System.out.println();
         System.out.println("Batch mode (no GUI):");
