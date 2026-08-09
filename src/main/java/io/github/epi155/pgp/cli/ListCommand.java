@@ -51,6 +51,7 @@ public final class ListCommand {
     static String usage() {
         return "Usage: pgp-tool -l, --list <keyring.asc>...\n"
                 + "List the public keys (and subkeys) contained in the given keyrings.\n"
-                + "Each line shows algorithm, key ID and [S]ign/[E]ncrypt capability.\n";
+                + "Each line shows algorithm, key ID and the [C]ertify, [S]ign,\n"
+                + "[E]ncrypt and [A]uthentication capability flags.\n";
     }
 }

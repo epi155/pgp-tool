@@ -690,10 +690,11 @@ public class ReceivePanel extends JPanel {
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     String msg = cause.getMessage();
-                    if (msg != null && msg.contains("checksum")) {
+                    Long wrongKeyId = PGPEngine.wrongPassphraseKeyId(cause);
+                    if (wrongKeyId != null) {
                         UIUtils.showError(ReceivePanel.this,
                                 "Wrong password for private key.", cause);
-                        engine.clearPassphraseCache();
+                        engine.removePassphrase(wrongKeyId);
                     } else if (msg != null && msg.contains("No matching private key")) {
                         UIUtils.showError(ReceivePanel.this,
                                 msg, cause);

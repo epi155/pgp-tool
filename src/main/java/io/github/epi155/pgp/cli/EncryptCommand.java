@@ -328,12 +328,6 @@ public final class EncryptCommand {
     }
 
     static String usage(boolean privateExtensions) {
-        String extraSym = privateExtensions ? ", Serpent-128/192/256, ChaCha20-Poly1305, ASCON" : "";
-        String extraHash = privateExtensions ? ", SHA3-256, SHA3-512" : "";
-        String extraComp = privateExtensions ? ", XZ, ZSTD" : "";
-        String privNote = privateExtensions ? ""
-                : "\n                (pass -p/--private to enable Serpent, ChaCha20-Poly1305, ASCON\n"
-                + "                ciphers, XZ/ZSTD compression and SHA3 hashes)\n";
         return "Usage: pgp-tool -e, --encrypt [options] [input-file]\n"
                 + "Encrypt data to one or more recipients / password layers (inner to outer).\n\n"
                 + "Options:\n"
@@ -345,20 +339,26 @@ public final class EncryptCommand {
                 + "                            With no #id every encryption-capable key in the\n"
                 + "                            keyring is used; #id selects exactly one (short\n"
                 + "                            0xABCDEF12, full 16-hex, or 32-hex fingerprint).\n"
-                + "                            ALGO: AES-128/192/256, CAST5, Blowfish, Triple-DES,\n"
-                + "                            Twofish, Camellia-128/192/256"
-                + extraSym + "\n"
-                + privNote
+                + "                            ALGO: AES-128/192/256, CAST5, Blowfish,\n"
+                + "                            Triple-DES, Twofish, Camellia-128/192/256\n"
+                + (privateExtensions
+                        ? "                            Serpent-128/192/256, ChaCha20-Poly1305, ASCON\n"
+                        : "")
                 + "  --password PASSWORD     Password for a PASS layer, repeatable (one per layer,\n"
                 + "                            or - to read one line from stdin)\n"
-                + "  --password-file FILE    Read passwords (one per line) from FILE (or - for stdin)\n"
+                + "  --password-file FILE    Read passwords (one per line) from FILE,\n"
+                + "                            or - to read one line from stdin\n"
                 + "  --sign-key SPEC         Sign with a key: file[#id][:passphrase[:HASH]]\n"
-                + "                            HASH: SHA-256 (default), SHA-384, SHA-512"
-                + extraHash + "\n"
+                + "                            HASH: SHA-256 (default), SHA-384, SHA-512\n"
+                + (privateExtensions
+                        ? "                            SHA3-256, SHA3-512\n"
+                        : "")
                 + "  --passphrase P          Fallback signing passphrase (or - for stdin)\n"
                 + "  --passphrase-file FILE  Fallback signing passphrases, one per line\n"
-                + "  --compress ALGO         ZIP, ZLIB, BZIP2"
-                + extraComp + ", UNCOMPRESSED (default ZLIB)\n"
+                + (privateExtensions
+                        ? "  --compress ALGO         ZIP, ZLIB, BZIP2, XZ, ZSTD,\n"
+                        + "                            UNCOMPRESSED (default ZLIB)\n"
+                        : "  --compress ALGO         ZIP, ZLIB, BZIP2, UNCOMPRESSED (default ZLIB)\n")
                 + "  --attach FILE           Attach FILE (repeatable) in a compound message\n"
                 + "  --armor / --no-armor    ASCII armor the output (default armor)\n"
                 + "  --force                 Overwrite the output file if it exists\n"

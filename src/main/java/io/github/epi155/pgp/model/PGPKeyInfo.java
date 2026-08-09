@@ -15,6 +15,8 @@ public class PGPKeyInfo {
     private final boolean isMasterKey;
     private final boolean canSign;
     private final boolean canEncrypt;
+    private final boolean canCertify;
+    private final boolean canAuthenticate;
     private final List<String> userIds;
     private final Object bcKey;
     private final List<PGPKeyInfo> subKeys;
@@ -23,12 +25,13 @@ public class PGPKeyInfo {
                       Date creationTime, boolean isMasterKey, boolean canSign,
                       boolean canEncrypt, List<String> userIds, Object bcKey) {
         this(keyId, fingerprint, algorithm, null, bitLength, creationTime, isMasterKey,
-                canSign, canEncrypt, userIds, bcKey);
+                canSign, canEncrypt, false, false, userIds, bcKey);
     }
 
     public PGPKeyInfo(long keyId, String fingerprint, String algorithm, String curve, int bitLength,
                       Date creationTime, boolean isMasterKey, boolean canSign,
-                      boolean canEncrypt, List<String> userIds, Object bcKey) {
+                      boolean canEncrypt, boolean canCertify, boolean canAuthenticate,
+                      List<String> userIds, Object bcKey) {
         this.keyId = keyId;
         this.fingerprint = fingerprint;
         this.algorithm = algorithm;
@@ -38,6 +41,8 @@ public class PGPKeyInfo {
         this.isMasterKey = isMasterKey;
         this.canSign = canSign;
         this.canEncrypt = canEncrypt;
+        this.canCertify = canCertify;
+        this.canAuthenticate = canAuthenticate;
         this.userIds = userIds != null ? userIds : new ArrayList<>();
         this.bcKey = bcKey;
         this.subKeys = new ArrayList<>();
@@ -53,6 +58,8 @@ public class PGPKeyInfo {
     public boolean isMasterKey() { return isMasterKey; }
     public boolean canSign() { return canSign; }
     public boolean canEncrypt() { return canEncrypt; }
+    public boolean canCertify() { return canCertify; }
+    public boolean canAuthenticate() { return canAuthenticate; }
     public String getUserId() { return userIds.isEmpty() ? null : userIds.get(0); }
     public List<String> getUserIds() { return userIds; }
     public List<PGPKeyInfo> getSubKeys() { return subKeys; }
@@ -67,19 +74,16 @@ public class PGPKeyInfo {
         sb.append(algorithm).append(" ").append(bitLength).append("b");
         if (curve != null) sb.append(" (").append(curve).append(")");
         sb.append(" ").append(getKeyIdHex());
+        sb.append(" [");
+        if (canCertify) sb.append("C");
+        if (canSign) sb.append("S");
+        if (canEncrypt) sb.append("E");
+        if (canAuthenticate) sb.append("A");
+        sb.append("]");
         if (isMasterKey) {
-            sb.append(" [");
-            if (canSign) sb.append("S");
-            if (canEncrypt) sb.append("E");
-            sb.append("]");
             for (String uid : userIds) {
                 sb.append(" ").append(uid);
             }
-        } else {
-            sb.append(" [");
-            if (canSign) sb.append("S");
-            if (canEncrypt) sb.append("E");
-            sb.append("]");
         }
         return sb.toString();
     }

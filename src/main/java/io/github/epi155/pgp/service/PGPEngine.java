@@ -205,6 +205,9 @@ public class PGPEngine {
                 char[] passphrase = signPassphrases != null && i < signPassphrases.size()
                         ? signPassphrases.get(i) : null;
                 PGPPrivateKey signPrivateKey = extractPrivateKey(signKeys.get(i), passphrase);
+                if (passphrase != null) {
+                    cachePassphrase(signKeys.get(i).getKeyID(), passphrase);
+                }
                 PGPPublicKey signPubKey = signKeys.get(i).getPublicKey();
                 int userHash = (hashAlgorithms != null && i < hashAlgorithms.size())
                     ? hashAlgorithms.get(i) : HashAlgorithmTags.SHA256;
@@ -504,7 +507,6 @@ public class PGPEngine {
 
                 try {
                     PGPPrivateKey privateKey = extractPrivateKey(sk, passphrase);
-                    passphraseCache.put(sk.getKeyID(), passphrase);
 
                     PGPPublicKeyEncryptedData encData = findEncDataById(encList, rid);
                     InputStream clearStream;
@@ -527,6 +529,7 @@ public class PGPEngine {
                             sk.getPublicKey().getAlgorithm(),
                             KeyringLoader.curveName(sk.getPublicKey()),
                             encData.getKeyIdentifier().getKeyId(), allRecipientIds, uid));
+                    passphraseCache.put(sk.getKeyID(), passphrase);
 
                     return clearStream;
                 } catch (Exception e) {
@@ -777,6 +780,25 @@ public class PGPEngine {
 
     public void clearPassphraseCache() {
         passphraseCache.clear();
+    }
+
+    public void removePassphrase(long keyId) {
+        passphraseCache.remove(keyId);
+    }
+
+    public static boolean isWrongPassphrase(Throwable t) {
+        return wrongPassphraseKeyId(t) != null;
+    }
+
+    public static Long wrongPassphraseKeyId(Throwable t) {
+        Throwable c = t;
+        while (c != null) {
+            if (c instanceof PassphraseRequiredException) {
+                return ((PassphraseRequiredException) c).getKeyId();
+            }
+            c = c.getCause();
+        }
+        return null;
     }
 
     private PGPPrivateKey extractPrivateKey(PGPSecretKey key, char[] passphrase) throws PGPException {

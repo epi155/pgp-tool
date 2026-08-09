@@ -26,7 +26,7 @@ If `args[0]` is a command, `PGPTool.main()` dispatches to `Cli.run()` and exits 
 
 | Command | Purpose |
 |---------|---------|
-| `-l` / `--list <keyring.asc>...` | List master keys + subkeys with `[S]`/`[E]` capability |
+| `-l` / `--list <keyring.asc>...` | List master keys + subkeys with `[C]`/`[S]`/`[E]`/`[A]` capability (certify/sign/encrypt/authenticate) |
 | `-g` / `--generate ...` | Generate a key pair (armored `<name>-public.asc` / `<name>-secret.asc`) |
 | `-e` / `--encrypt [file]` | Encrypt to KEY/PASS layers, sign, optional compound attachments |
 | `-d` / `--decrypt [file]` | Decrypt nested messages, save attachments, verify signatures |

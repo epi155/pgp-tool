@@ -203,7 +203,10 @@ public final class KeySelector {
         for (PGPKeyInfo i : all) {
             if (sb.length() > 0) sb.append(", ");
             sb.append("0x").append(String.format("%016X", i.getKeyId()));
-            sb.append(i.canSign() ? "S" : "").append(i.canEncrypt() ? "E" : "");
+            sb.append(i.canCertify() ? "C" : "")
+              .append(i.canSign() ? "S" : "")
+              .append(i.canEncrypt() ? "E" : "")
+              .append(i.canAuthenticate() ? "A" : "");
         }
         return sb.toString();
     }

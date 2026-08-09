@@ -242,6 +242,7 @@ public class SendPanel extends JPanel {
             boolean enc = encCheckBox.isSelected();
             setEncLayersEnabled(enc);
             updateEncryptButton();
+            updateFilterField();
         });
         signCheckBox.addActionListener(e -> {
             boolean sign = signCheckBox.isSelected();
@@ -395,10 +396,11 @@ public class SendPanel extends JPanel {
     }
 
     private void updateFilterField() {
-        boolean multi = activeEncKeyPanel != null && activeEncKeyPanel.hasMultipleMasterKeys();
+        boolean enc = encCheckBox.isSelected();
         boolean active = activeEncKeyPanel != null && activeEncKeyPanel.isSelectedViewActive();
-        userFilterField.setEnabled(!active && multi);
-        clearSelButton.setEnabled(!active && multi);
+        userFilterField.setEnabled(enc && !active && activeEncKeyPanel != null);
+        boolean hasSel = activeEncKeyPanel != null && !activeEncKeyPanel.getSelectedKeys().isEmpty();
+        clearSelButton.setEnabled(enc && !active && hasSel);
     }
 
     private void updateEncryptButton() {
@@ -758,7 +760,6 @@ public class SendPanel extends JPanel {
                         dlg.setVisible(true);
                         passphrase = dlg.getPassword();
                         if (passphrase == null) return;
-                        engine.cachePassphrase(keyId, passphrase);
                     }
                 } else {
                     passphrase = engine.getPassphraseFor(keyId);
@@ -905,9 +906,10 @@ public class SendPanel extends JPanel {
                         }
                     } catch (Exception ex) {
                         Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                        if (cause.getMessage() != null && cause.getMessage().contains("checksum")) {
+                        Long wrongKeyId = PGPEngine.wrongPassphraseKeyId(cause);
+                        if (wrongKeyId != null) {
                             UIUtils.showError(SendPanel.this, "Wrong password for private key.", cause);
-                            if (!fSignKeys.isEmpty()) engine.clearPassphraseCache();
+                            engine.removePassphrase(wrongKeyId);
                         } else {
                             UIUtils.showError(SendPanel.this,
                                     "Error during encryption:\n" + cause.getMessage(), cause);
@@ -918,9 +920,10 @@ public class SendPanel extends JPanel {
             worker.execute();
             progress.setVisible(true);
         } catch (Exception ex) {
-            if (ex.getMessage() != null && ex.getMessage().contains("checksum")) {
+            Long wrongKeyId = PGPEngine.wrongPassphraseKeyId(ex);
+            if (wrongKeyId != null) {
                 UIUtils.showError(this, "Wrong password for private key.", ex);
-                if (!signKeys.isEmpty()) engine.clearPassphraseCache();
+                engine.removePassphrase(wrongKeyId);
             } else {
                 UIUtils.showError(this, "Error during encryption:\n" + ex.getMessage(), ex);
             }
@@ -1017,7 +1020,10 @@ public class SendPanel extends JPanel {
             // Initial match state
             updateMatchLabel();
 
-            keyPanel.addSelectionListener(e -> updateEncryptButton());
+            keyPanel.addSelectionListener(e -> {
+                updateEncryptButton();
+                updateFilterField();
+            });
             keyPanel.addViewModeListener(active -> {
                 updateFilterField();
                 updateShowViewButton();

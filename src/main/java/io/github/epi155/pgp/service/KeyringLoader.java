@@ -146,13 +146,15 @@ public class KeyringLoader {
         Date creation = key.getCreationTime();
         boolean canSign = hasSignCapability(key);
         boolean canEncrypt = hasEncryptCapability(key);
+        boolean canCertify = hasCertifyCapability(key);
+        boolean canAuthenticate = hasAuthenticateCapability(key);
         List<String> userIds = new ArrayList<>();
         if (isMaster) {
             Iterator<String> uids = key.getUserIDs();
             while (uids.hasNext()) userIds.add(uids.next());
         }
         return new PGPKeyInfo(keyId, fp, algorithm, curveName(key), bitLen, creation, isMaster,
-                canSign, canEncrypt, userIds, key);
+                canSign, canEncrypt, canCertify, canAuthenticate, userIds, key);
     }
 
     private static PGPKeyInfo createKeyInfo(PGPSecretKey key, boolean isMaster) {
@@ -165,13 +167,15 @@ public class KeyringLoader {
         Date creation = pubKey.getCreationTime();
         boolean canSign = hasSignCapability(pubKey);
         boolean canEncrypt = hasEncryptCapability(pubKey);
+        boolean canCertify = hasCertifyCapability(pubKey);
+        boolean canAuthenticate = hasAuthenticateCapability(pubKey);
         List<String> userIds = new ArrayList<>();
         if (isMaster) {
             Iterator<String> uids = key.getUserIDs();
             while (uids.hasNext()) userIds.add(uids.next());
         }
         return new PGPKeyInfo(keyId, fp, algorithm, curveName(pubKey), bitLen, creation, isMaster,
-                canSign, canEncrypt, userIds, key);
+                canSign, canEncrypt, canCertify, canAuthenticate, userIds, key);
     }
 
     public static String curveName(PGPPublicKey key) {
@@ -253,14 +257,7 @@ public class KeyringLoader {
         if (flags != 0) {
             return (flags & KeyFlags.SIGN_DATA) != 0;
         }
-        return key.isMasterKey() && (
-                algo == PublicKeyAlgorithmTags.RSA_GENERAL ||
-                algo == PublicKeyAlgorithmTags.RSA_SIGN ||
-                algo == PublicKeyAlgorithmTags.DSA ||
-                algo == PublicKeyAlgorithmTags.ECDSA ||
-                algo == PublicKeyAlgorithmTags.EDDSA ||
-                algo == PublicKeyAlgorithmTags.Ed25519 ||
-                algo == PublicKeyAlgorithmTags.Ed448);
+        return key.isMasterKey() && isSigningAlgorithm(algo);
     }
 
     private static boolean hasEncryptCapability(PGPPublicKey key) {
@@ -275,6 +272,29 @@ public class KeyringLoader {
             return (flags & (KeyFlags.ENCRYPT_COMMS | KeyFlags.ENCRYPT_STORAGE)) != 0;
         }
         return key.isEncryptionKey();
+    }
+
+    private static boolean hasCertifyCapability(PGPPublicKey key) {
+        int flags = extractKeyFlags(key);
+        if (flags != 0) {
+            return (flags & KeyFlags.CERTIFY_OTHER) != 0;
+        }
+        return key.isMasterKey() && isSigningAlgorithm(key.getAlgorithm());
+    }
+
+    private static boolean hasAuthenticateCapability(PGPPublicKey key) {
+        int flags = extractKeyFlags(key);
+        return flags != 0 && (flags & KeyFlags.AUTHENTICATION) != 0;
+    }
+
+    private static boolean isSigningAlgorithm(int algo) {
+        return algo == PublicKeyAlgorithmTags.RSA_GENERAL ||
+                algo == PublicKeyAlgorithmTags.RSA_SIGN ||
+                algo == PublicKeyAlgorithmTags.DSA ||
+                algo == PublicKeyAlgorithmTags.ECDSA ||
+                algo == PublicKeyAlgorithmTags.EDDSA ||
+                algo == PublicKeyAlgorithmTags.Ed25519 ||
+                algo == PublicKeyAlgorithmTags.Ed448;
     }
 
     private static int extractKeyFlags(PGPPublicKey key) {

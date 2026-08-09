@@ -114,6 +114,7 @@ public class KeyGeneratorService {
             int subFlags = 0;
             if (spec.isCanSign()) subFlags |= KeyFlags.SIGN_DATA;
             if (spec.isCanEncrypt()) subFlags |= KeyFlags.ENCRYPT_COMMS | KeyFlags.ENCRYPT_STORAGE;
+            if (spec.isCanAuthenticate()) subFlags |= KeyFlags.AUTHENTICATION;
             if (subFlags == 0) subFlags = KeyFlags.ENCRYPT_COMMS | KeyFlags.ENCRYPT_STORAGE;
             subHashed.setKeyFlags(false, subFlags);
             long subExp = spec.getExpirationSeconds();

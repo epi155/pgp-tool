@@ -201,9 +201,10 @@ public class KeyTabPanel extends JPanel {
             spec.setExpirationSeconds(parseExpiration((String) row.expCombo.getSelectedItem()));
             spec.setCanSign(row.signCb.isSelected());
             spec.setCanEncrypt(row.encryptCb.isSelected());
+            spec.setCanAuthenticate(row.authCb.isSelected());
             // For EC secp* subkeys, choose ECDSA or ECDH based on checkboxes
             if (sel != null && sel.startsWith("EC")) {
-                if (spec.isCanSign() && !spec.isCanEncrypt())
+                if ((spec.isCanSign() || spec.isCanAuthenticate()) && !spec.isCanEncrypt())
                     spec.setAlgorithm(KeyConfig.KeySpec.Algorithm.ECDSA);
                 else
                     spec.setAlgorithm(KeyConfig.KeySpec.Algorithm.ECDH);
@@ -280,17 +281,23 @@ public class KeyTabPanel extends JPanel {
             row.signCb.setSelected(row.savedSign);
             row.encryptCb.setEnabled(true);
             row.encryptCb.setSelected(row.savedEncrypt);
+            row.authCb.setEnabled(true);
+            row.authCb.setSelected(row.savedAuth);
             row.syncing = false;
         } else if (sel.equals("Ed25519") || sel.equals("Ed448")) {
             row.signCb.setEnabled(true);
             row.signCb.setSelected(true);
             row.encryptCb.setEnabled(false);
             row.encryptCb.setSelected(false);
+            row.authCb.setEnabled(true);
+            row.authCb.setSelected(row.savedAuth);
         } else {
             row.signCb.setEnabled(false);
             row.signCb.setSelected(false);
             row.encryptCb.setEnabled(true);
             row.encryptCb.setSelected(true);
+            row.authCb.setEnabled(false);
+            row.authCb.setSelected(false);
         }
     }
 
@@ -356,8 +363,10 @@ public class KeyTabPanel extends JPanel {
         final JComboBox<String> expCombo;
         final JCheckBox signCb;
         final JCheckBox encryptCb;
+        final JCheckBox authCb;
         private boolean savedSign = true;
         private boolean savedEncrypt = true;
+        private boolean savedAuth = false;
         boolean syncing;
 
         SubKeyRow() {
@@ -366,6 +375,7 @@ public class KeyTabPanel extends JPanel {
             expCombo = new JComboBox<>(expirationOptions());
             signCb = new JCheckBox("Sign", true);
             encryptCb = new JCheckBox("Encrypt", true);
+            authCb = new JCheckBox("Auth", false);
             java.awt.event.ItemListener checkboxSaver = e -> {
                 if (syncing) return;
                 if (e.getStateChange() == java.awt.event.ItemEvent.SELECTED
@@ -374,11 +384,13 @@ public class KeyTabPanel extends JPanel {
                     if (sel != null && (sel.startsWith("RSA") || sel.startsWith("EC"))) {
                         savedSign = signCb.isSelected();
                         savedEncrypt = encryptCb.isSelected();
+                        savedAuth = authCb.isSelected();
                     }
                 }
             };
             signCb.addItemListener(checkboxSaver);
             encryptCb.addItemListener(checkboxSaver);
+            authCb.addItemListener(checkboxSaver);
             algoCombo.addActionListener(e -> updateSubkeyCheckboxes(this));
             JButton removeBtn = new JButton("X Remove");
             removeBtn.addActionListener(e -> {
@@ -393,6 +405,7 @@ public class KeyTabPanel extends JPanel {
             panel.add(expCombo);
             panel.add(signCb);
             panel.add(encryptCb);
+            panel.add(authCb);
             panel.add(removeBtn);
             updateSubkeyCheckboxes(this);
         }

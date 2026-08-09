@@ -178,16 +178,18 @@ public final class GenerateCommand {
         boolean canCertify;
         boolean canSign;
         boolean canEncrypt;
+        boolean canAuthenticate;
         if (flagsGiven) {
             List<String> flags = Arrays.asList(flagsToken.split(","));
             for (String f : flags) {
-                if (!f.equals("sign") && !f.equals("encrypt") && !f.equals("certify")) {
-                    throw new CliException("Invalid key flag '" + f + "' (use sign, encrypt, certify)", true);
+                if (!f.equals("sign") && !f.equals("encrypt") && !f.equals("certify") && !f.equals("authenticate")) {
+                    throw new CliException("Invalid key flag '" + f + "' (use sign, encrypt, certify, authenticate)", true);
                 }
             }
             canCertify = flags.contains("certify");
             canSign = flags.contains("sign");
             canEncrypt = flags.contains("encrypt");
+            canAuthenticate = flags.contains("authenticate");
         } else {
             boolean xdh = spec.getAlgorithm() == KeyConfig.KeySpec.Algorithm.XDH
                     || spec.getAlgorithm() == KeyConfig.KeySpec.Algorithm.X448;
@@ -196,6 +198,7 @@ public final class GenerateCommand {
             canCertify = isMaster;
             canSign = isMaster || !xdh;
             canEncrypt = !isMaster && !ed;
+            canAuthenticate = false;
         }
 
         if (isMaster && spec.getAlgorithm() != KeyConfig.KeySpec.Algorithm.RSA) {
@@ -214,9 +217,13 @@ public final class GenerateCommand {
                 throw new CliException("X25519/X448 keys cannot sign", true);
             }
             canSign = false;
+            if (canAuthenticate) {
+                throw new CliException("X25519/X448 keys cannot authenticate", true);
+            }
+            canAuthenticate = false;
         }
         if (!isMaster && spec.getAlgorithm() == KeyConfig.KeySpec.Algorithm.ECDH) {
-            if (canSign && !canEncrypt) {
+            if ((canSign || canAuthenticate) && !canEncrypt) {
                 spec.setAlgorithm(KeyConfig.KeySpec.Algorithm.ECDSA);
             } else {
                 spec.setAlgorithm(KeyConfig.KeySpec.Algorithm.ECDH);
@@ -226,6 +233,7 @@ public final class GenerateCommand {
         spec.setCanCertify(canCertify);
         spec.setCanSign(canSign);
         spec.setCanEncrypt(canEncrypt);
+        spec.setCanAuthenticate(canAuthenticate);
         spec.setExpirationSeconds(exp);
         return spec;
     }
@@ -252,15 +260,18 @@ public final class GenerateCommand {
                 + "  --user-id UID            Identity, e.g. \"Alice <alice@example.com>\" (required)\n"
                 + "  --master SPEC            Master key spec (default RSA-3072)\n"
                 + "  --master-encrypt         Also allow the RSA master to encrypt\n"
-                + "  --subkey SPEC            Subkey spec, repeatable:\n"
-                + "                             RSA-2048|RSA-3072|RSA-4096 | EC-secp256r1 | EC-secp384r1\n"
-                + "                             | EC-secp521r1 | EC-brainpoolP256r1 | EC-brainpoolP384r1\n"
-                + "                             | EC-brainpoolP512r1 | Ed25519 | Ed448 | X25519 | X448\n"
-                + "                             optional [:sign,encrypt,certify][:EXP_SECONDS]\n"
-                + "  --expiration SECONDS     Master key expiration (default never)\n"
-                + "  --passphrase PASS        Protect the secret key with PASS\n"
+                 + "  --subkey SPEC            Subkey spec, repeatable:\n"
+                 + "                             RSA-2048|RSA-3072|RSA-4096 | EC-secp256r1\n"
+                 + "                             EC-secp384r1 | EC-secp521r1 | EC-brainpoolP256r1\n"
+                 + "                             EC-brainpoolP384r1 | EC-brainpoolP512r1 | Ed25519\n"
+                 + "                             Ed448 | X25519 | X448\n"
+                 + "                             optional [:sign,encrypt,certify,authenticate]\n"
+                 + "                             optional [:EXP_SECONDS]\n"
+                 + "  --expiration SECONDS     Master key expiration (default never)\n"
+                 + "  --passphrase PASS        Protect the secret key with PASS\n"
                 + "  --passphrase-file FILE   Read the passphrase from FILE (or - for stdin)\n"
-                + "  --output DIR             Write <name>-public.asc and <name>-secret.asc here (required)\n"
+                 + "  --output DIR             Write <name>-public.asc and <name>-secret.asc\n"
+                 + "                             into DIR (required)\n"
                 + "  --quiet                  Suppress the summary output\n";
     }
 }

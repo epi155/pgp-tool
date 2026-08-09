@@ -26,6 +26,7 @@ public class KeyConfig {
         private boolean canCertify;
         private boolean canSign;
         private boolean canEncrypt;
+        private boolean canAuthenticate;
         private long expirationSeconds;
 
         public KeySpec() {}
@@ -53,6 +54,9 @@ public class KeyConfig {
 
         public boolean isCanEncrypt() { return canEncrypt; }
         public void setCanEncrypt(boolean canEncrypt) { this.canEncrypt = canEncrypt; }
+
+        public boolean isCanAuthenticate() { return canAuthenticate; }
+        public void setCanAuthenticate(boolean canAuthenticate) { this.canAuthenticate = canAuthenticate; }
 
         public long getExpirationSeconds() { return expirationSeconds; }
         public void setExpirationSeconds(long expirationSeconds) { this.expirationSeconds = expirationSeconds; }
