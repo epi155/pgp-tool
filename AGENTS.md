@@ -32,7 +32,7 @@ If `args[0]` is a command, `PGPTool.main()` dispatches to `Cli.run()` and exits 
 | `-d` / `--decrypt [file]` | Decrypt nested messages, save attachments, verify signatures |
 
 Each command supports `-h` / `--help`. Key selection is **explicit**: `--layer KEY:file[#id]:ALGO` /
-`--sign-key file[#id][:pass[:HASH]]` / `--secret-key file[#id][:pass]` resolve to exactly the
+`--sign-key file[#id][:pass][:HASH]` / `--secret-key file[#id][:pass]` resolve to exactly the
 requested keys via `cli/KeySelector` (short 0x-8-hex, full 16-hex, or 32-hex fingerprint; errors
 if missing/ambiguous/not encrypt-or-sign capable/revoked/expired). With no `#id`, **every**
 capable key in the keyring is used (never BC's "last subkey"). `--list` is the way to discover IDs.

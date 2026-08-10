@@ -348,7 +348,7 @@ public final class EncryptCommand {
                 + "                            or - to read one line from stdin)\n"
                 + "  --password-file FILE    Read passwords (one per line) from FILE,\n"
                 + "                            or - to read one line from stdin\n"
-                + "  --sign-key SPEC         Sign with a key: file[#id][:passphrase[:HASH]]\n"
+                + "  --sign-key SPEC         Sign with a key: file[#id][:passphrase][:HASH]\n"
                 + "                            HASH: SHA-256 (default), SHA-384, SHA-512\n"
                 + (privateExtensions
                         ? "                            SHA3-256, SHA3-512\n"
