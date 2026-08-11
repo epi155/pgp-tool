@@ -356,7 +356,7 @@ public final class EncryptCommand {
                 + "  --passphrase P          Fallback signing passphrase (or - for stdin)\n"
                 + "  --passphrase-file FILE  Fallback signing passphrases, one per line\n"
                 + (privateExtensions
-                        ? "  --compress ALGO         ZIP, ZLIB, BZIP2, XZ, ZSTD,\n"
+                        ? "  --compress ALGO         ZIP, ZLIB, BZIP2, XZ,\n"
                         + "                            UNCOMPRESSED (default ZLIB)\n"
                         : "  --compress ALGO         ZIP, ZLIB, BZIP2, UNCOMPRESSED (default ZLIB)\n")
                 + "  --attach FILE           Attach FILE (repeatable) in a compound message\n"

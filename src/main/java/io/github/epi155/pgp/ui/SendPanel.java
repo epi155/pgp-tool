@@ -73,7 +73,7 @@ public class SendPanel extends JPanel {
 
         encCheckBox = new JCheckBox("Enc", true);
         compAlgoCombo = new JComboBox<>(privateExtensions
-                ? new String[]{"ZIP", "ZLIB", "BZIP2", "XZ", "ZSTD", "None"}
+                ? new String[]{"ZIP", "ZLIB", "BZIP2", "XZ", "None"}
                 : new String[]{"ZIP", "ZLIB", "BZIP2", "None"});
         compAlgoCombo.setSelectedItem("ZLIB");
         compAlgoCombo.setEnabled(false);
@@ -535,7 +535,6 @@ public class SendPanel extends JPanel {
             case "ZIP": return CompressionAlgorithmTags.ZIP;
             case "BZIP2": return CompressionAlgorithmTags.BZIP2;
             case "XZ": return CustomCompression.XZ;
-            case "ZSTD": return CustomCompression.ZSTD;
             default: return CompressionAlgorithmTags.UNCOMPRESSED;
         }
     }

@@ -101,17 +101,15 @@ public final class Names {
             case "ZLIB": return CompressionAlgorithmTags.ZLIB;
             case "BZIP2": return CompressionAlgorithmTags.BZIP2;
             case "XZ":
-            case "ZSTD":
                 if (!privateExtensions) {
                     throw new CliException("Private extension compression '" + name
                             + "' requires -p/--private", true);
                 }
-                if (name.equalsIgnoreCase("XZ")) return CustomCompression.XZ;
-                return CustomCompression.ZSTD;
+                return CustomCompression.XZ;
             default:
                 throw new CliException("Unknown compression algorithm: '" + name
                         + "' (use ZIP, ZLIB, BZIP2, UNCOMPRESSED"
-                        + (privateExtensions ? ", XZ, ZSTD" : "") + ")", true);
+                        + (privateExtensions ? ", XZ" : "") + ")", true);
         }
     }
 }

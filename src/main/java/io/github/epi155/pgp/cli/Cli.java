@@ -53,7 +53,7 @@ public final class Cli {
                 + "  pgp-tool -l, --list <keyring.asc>...   List keys in a public keyring\n"
                 + "\n"
                 + "  -p, --private      Enable private extension algorithms (Serpent,\n"
-                + "                     ChaCha20-Poly1305, ASCON ciphers, XZ/ZSTD compression,\n"
+                + "                     ChaCha20-Poly1305, ASCON ciphers, XZ compression,\n"
                 + "                     SHA3 hashes).\n"
                 + "                     Place it before the command, e.g. pgp-tool -p -e ...\n"
                 + "\n"

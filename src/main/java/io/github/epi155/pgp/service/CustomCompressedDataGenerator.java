@@ -8,8 +8,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 
 /**
- * Generator for {@link PacketTags#COMPRESSED_DATA} packets using the custom streaming codecs
- * (XZ/ZSTD). Mirrors {@code org.bouncycastle.openpgp.PGPCompressedDataGenerator}, which only
+ * Generator for {@link PacketTags#COMPRESSED_DATA} packets using the custom streaming codec
+ * (XZ). Mirrors {@code org.bouncycastle.openpgp.PGPCompressedDataGenerator}, which only
  * accepts IDs 0-3: we write the packet header + algorithm byte, then stream the codec over a
  * non-closing adapter so {@link #close()} can finalise the codec footer and the PGP packet without
  * closing the encrypted output stream beneath (the outer packet owns that).

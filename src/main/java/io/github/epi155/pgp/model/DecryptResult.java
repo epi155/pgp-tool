@@ -570,7 +570,6 @@ public class DecryptResult {
                 case 2: return "ZLIB";
                 case 3: return "BZIP2";
                 case 128: return "XZ";
-                case 129: return "ZSTD";
                 default: return "Algo#" + algo;
             }
         }
