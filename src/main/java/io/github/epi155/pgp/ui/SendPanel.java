@@ -14,6 +14,7 @@ import org.bouncycastle.openpgp.PGPSecretKey;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.undo.UndoManager;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
@@ -502,8 +503,18 @@ public class SendPanel extends JPanel {
     private void chooseOutputFile() {
         JFileChooser fc = new JFileChooser();
         fc.setDialogType(JFileChooser.SAVE_DIALOG);
+        fc.setFileFilter(new FileNameExtensionFilter(
+                "Encrypted files (*.gpg, *.pgp, *.asc)", "gpg", "pgp", "asc"));
         if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-            outputFileField.setText(fc.getSelectedFile().getAbsolutePath());
+            File chosen = fc.getSelectedFile();
+            if (chosen != null && fc.getFileFilter() instanceof FileNameExtensionFilter) {
+                String name = chosen.getName();
+                if (!name.contains(".")) {
+                    String ext = armorCheckBox.isSelected() ? "asc" : "gpg";
+                    chosen = new File(chosen.getParentFile(), name + "." + ext);
+                }
+            }
+            outputFileField.setText(chosen.getAbsolutePath());
             updateOutputMode();
         }
     }
