@@ -3,9 +3,24 @@
 ## Build & run
 
 - **Compile**: `mvn compile`
-- **Package fat JAR**: `mvn package` → `target/pgp-tool-1.1.0-SNAPSHOT.jar` (shaded)
-- **Run**: `java -jar target/pgp-tool-1.1.0-SNAPSHOT.jar [flags]` or `mvn exec:java`
+- **Package fat JAR**: `mvn package` → `target/pgp-tool-1.0.0-SNAPSHOT.jar` (shaded)
+- **Run**: `java -jar target/pgp-tool-1.0.0-SNAPSHOT.jar [flags]` or `mvn exec:java`
 - **No tests** — no test framework, no test files.
+
+## Release (GitHub Actions)
+
+Distribution is **GitHub Releases only** (no Maven Central, no GPG signing — `maven-gpg-plugin` and
+`central-publishing-maven-plugin` were removed from the pom). Flow:
+
+1. `mvn release:prepare` (config in pom: `pushChanges=false`, `tagNameFormat=v@{version}`) — bumps
+   `X.Y.Z-SNAPSHOT` → `X.Y.Z`, commits `release vX.Y.Z`, tags `vX.Y.Z`, commits next baseline.
+2. Manual push: `git push origin master && git push origin vX.Y.Z`.
+3. Tag `vX.Y.Z` triggers `.github/workflows/release.yml`: builds the fat jar, writes a `.sha256`, and
+   creates the GitHub Release with both files via `softprops/action-gh-release`.
+
+Full details in `RELEASE.md`. The pom must keep a **3-component** version (`1.0.0-SNAPSHOT`, never
+`1.0-SNAPSHOT`) so `release:prepare` produces `v1.0.0` and the `tags: ['v*']` trigger fires.
+`dependency-reduced-pom.xml` and `release.properties` are gitignored.
 
 ## CLI flags
 
@@ -143,6 +158,13 @@ Wire format per chunk (64 KiB, encoded size 10) — `AeadEncryptingStream`/`Aead
 - Window position/size and per-tab preferences via `java.util.prefs.Preferences` (derived from `MainFrame.class`'s package, `io.github.epi155.pgp`)
 - `MainFrame` saves/restores window bounds on open/close
 - `SendPanel` saves/restores encryption algo, compression, last paths, keyrings, signer settings
+
+## Send UI file dialog
+
+- `SendPanel.chooseOutputFile()` (file/attachment output mode) opens a save dialog whose active filter is
+  `Encrypted files (*.gpg, *.pgp, *.asc)`; the built-in "All Files" accept-all stays as second choice.
+- If the typed name has no extension and the encrypted filter is selected, the chosen extension is auto-appended:
+  `asc` when `armorCheckBox` is checked (default), else `gpg`.
 
 ## Compound message format
 
