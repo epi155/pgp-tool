@@ -18,10 +18,13 @@ public class PGPTool {
         Security.addProvider(new BouncyCastleProvider());
 
         boolean privateExtensions = false;
+        boolean curve448 = false;
         List<String> filtered = new ArrayList<>();
         for (String arg : args) {
             if (arg.equals("-p") || arg.equals("--private")) {
                 privateExtensions = true;
+            } else if (arg.equals("--curve448")) {
+                curve448 = true;
             } else {
                 filtered.add(arg);
             }
@@ -29,7 +32,7 @@ public class PGPTool {
         String[] rest = filtered.toArray(new String[0]);
 
         if (rest.length > 0 && Cli.isCommand(rest[0])) {
-            System.exit(runCli(rest, privateExtensions));
+            System.exit(runCli(rest, privateExtensions, curve448));
             return;
         }
         boolean showKeyTab = false;
@@ -68,15 +71,16 @@ public class PGPTool {
         boolean keyTab = showKeyTab;
         boolean adv = advanced;
         boolean priv = privateExtensions;
+        boolean cv448 = curve448;
         SwingUtilities.invokeLater(() -> {
-            MainFrame frame = new MainFrame(keyTab, adv, priv);
+            MainFrame frame = new MainFrame(keyTab, adv, priv, cv448);
             frame.setVisible(true);
         });
     }
 
-    private static int runCli(String[] args, boolean privateExtensions) {
+    private static int runCli(String[] args, boolean privateExtensions, boolean curve448) {
         try {
-            return Cli.run(args, privateExtensions);
+            return Cli.run(args, privateExtensions, curve448);
         } catch (CliException e) {
             System.err.println("pgp-tool: " + e.getMessage());
             if (e.isUsage()) {
@@ -100,6 +104,8 @@ public class PGPTool {
         System.out.println("  -p, --private    Enable private extension algorithms (Serpent,");
         System.out.println("                    ChaCha20-Poly1305, ASCON ciphers, XZ compression,");
         System.out.println("                    SHA3 hashes)");
+        System.out.println("  --curve448       Enable Ed448/X448 key generation (not yet supported by gpg);");
+        System.out.println("                    read/verify of Ed448 material is always on");
         System.out.println("  -h, --help       Show this help message and exit");
         System.out.println();
         System.out.println("Batch mode (no GUI):");

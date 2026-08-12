@@ -6,14 +6,14 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 
 public class PasswordDialog extends JDialog {
-    private JPasswordField passwordField;
+    private final JPasswordField passwordField;
     private JPasswordField confirmField;
-    private JCheckBox showCheckBox;
+    private final JCheckBox showCheckBox;
     private JCheckBox protectCb;
     private boolean confirmed = false;
-    private Mode mode;
-    private JLabel statusLabel;
-    private JButton okBtn;
+    private final Mode mode;
+    private final JLabel statusLabel;
+    private final JButton okBtn;
 
     public enum Mode { REQUEST, CREATE, CREATE_STRICT }
 
@@ -86,13 +86,13 @@ public class PasswordDialog extends JDialog {
             confirmField = new JPasswordField(20);
             fieldsPanel.add(confirmField, gbc);
             row++;
-
-            showCheckBox = new JCheckBox("Show password");
-            gbc.gridx = 1; gbc.gridy = row;
-            gbc.weightx = 1; gbc.fill = GridBagConstraints.NONE;
-            fieldsPanel.add(showCheckBox, gbc);
-            row++;
         }
+
+        showCheckBox = new JCheckBox("Show password");
+        gbc.gridx = 1; gbc.gridy = row;
+        gbc.weightx = 1; gbc.fill = GridBagConstraints.NONE;
+        fieldsPanel.add(showCheckBox, gbc);
+        row++;
 
         statusLabel = new JLabel(" ");
         statusLabel.setForeground(Color.RED.darker());
@@ -137,16 +137,18 @@ public class PasswordDialog extends JDialog {
             passwordField.addKeyListener(validator);
             confirmField.addKeyListener(validator);
 
-            showCheckBox.addActionListener(e -> {
-                boolean show = showCheckBox.isSelected();
-                passwordField.setEchoChar(show ? (char) 0 : '\u2022');
-                confirmField.setEchoChar(show ? (char) 0 : '\u2022');
-            });
-
             if (protectCb != null) {
                 protectCb.addActionListener(e -> updateCreateState());
             }
         }
+
+        showCheckBox.addActionListener(e -> {
+            boolean show = showCheckBox.isSelected();
+            passwordField.setEchoChar(show ? (char) 0 : '\u2022');
+            if (confirmField != null) {
+                confirmField.setEchoChar(show ? (char) 0 : '\u2022');
+            }
+        });
 
         passwordField.addActionListener(e -> {
             if (mode == Mode.REQUEST || okBtn.isEnabled()) {

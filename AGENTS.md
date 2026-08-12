@@ -46,6 +46,15 @@ If `args[0]` is a command, `PGPTool.main()` dispatches to `Cli.run()` and exits 
 | `-e` / `--encrypt [file]` | Encrypt to KEY/PASS layers, sign, optional compound attachments |
 | `-d` / `--decrypt [file]` | Decrypt nested messages, save attachments, verify signatures |
 
+**Ed448/X448 key generation is gated behind a dedicated `--curve448` flag** (GUI `KeyTabPanel`
+combos and CLI `-g --master/--subkey Ed448|X448` → `GenerateCommand.parseSpec`): gpg does not
+support Curve448 yet. It lives on its **own** flag — not under `-p/--private`, which stays strictly
+for private-use extension algorithms (Serpent/ChaCha/ASCON/XZ/SHA3). This is a **transitory gate**:
+to lift it when gpg ships Curve448, drop the `if (!curve448Enabled)` checks in
+`GenerateCommand.parseSpec`, the `filterCurve448()` filtering in `KeyTabPanel`, and the `--curve448`
+parsing in `PGPTool`/`Cli`/`MainFrame`. Reading/decrypting/verifying foreign Ed448 material is
+**always** active.
+
 Each command supports `-h` / `--help`. Key selection is **explicit**: `--layer KEY:file[#id]:ALGO` /
 `--sign-key file[#id][:pass][:HASH]` / `--secret-key file[#id][:pass]` resolve to exactly the
 requested keys via `cli/KeySelector` (short 0x-8-hex, full 16-hex, or 32-hex fingerprint; errors

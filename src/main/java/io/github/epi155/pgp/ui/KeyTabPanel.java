@@ -19,6 +19,14 @@ import java.util.List;
 
 public class KeyTabPanel extends JPanel {
 
+    private static final String[] MASTER_ALGOS = {
+            "RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1",
+            "EC brainpoolP256r1", "EC brainpoolP384r1", "EC brainpoolP512r1", "Ed25519", "Ed448"};
+    private static final String[] SUBKEY_ALGOS = {
+            "RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1",
+            "EC brainpoolP256r1", "EC brainpoolP384r1", "EC brainpoolP512r1", "Ed25519", "Ed448",
+            "X25519", "X448"};
+
     private final JTextField userIdField;
     private final JComboBox<String> masterAlgoCombo;
     private final JComboBox<String> masterExpCombo;
@@ -33,8 +41,10 @@ public class KeyTabPanel extends JPanel {
     private final JButton savePrivBtn;
 
     private GeneratedKey generatedKey;
+    private final boolean curve448Enabled;
 
-    public KeyTabPanel() {
+    public KeyTabPanel(boolean curve448Enabled) {
+        this.curve448Enabled = curve448Enabled;
         setLayout(new BorderLayout(10, 10));
         setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
@@ -59,7 +69,7 @@ public class KeyTabPanel extends JPanel {
         JPanel masterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
         masterPanel.setBorder(masterBorder);
 
-        masterAlgoCombo = new JComboBox<>(new String[]{"RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1", "EC brainpoolP256r1", "EC brainpoolP384r1", "EC brainpoolP512r1", "Ed25519", "Ed448"});
+        masterAlgoCombo = new JComboBox<>(filterCurve448(MASTER_ALGOS, curve448Enabled));
         masterAlgoCombo.addActionListener(e -> updateMasterCheckboxes());
         masterPanel.add(new JLabel("Type:"));
         masterPanel.add(masterAlgoCombo);
@@ -131,6 +141,19 @@ public class KeyTabPanel extends JPanel {
         add(splitPane, BorderLayout.CENTER);
 
         addSubKeyRow();
+    }
+
+    private static String[] filterCurve448(String[] algos, boolean curve448Enabled) {
+        if (curve448Enabled) {
+            return algos.clone();
+        }
+        List<String> list = new ArrayList<>(algos.length);
+        for (String a : algos) {
+            if (!a.equals("Ed448") && !a.equals("X448")) {
+                list.add(a);
+            }
+        }
+        return list.toArray(new String[0]);
     }
 
     private void addSubKeyRow() {
@@ -371,7 +394,7 @@ public class KeyTabPanel extends JPanel {
 
         SubKeyRow() {
             panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
-            algoCombo = new JComboBox<>(new String[]{"RSA 2048", "RSA 3072", "RSA 4096", "EC secp256r1", "EC secp384r1", "EC secp521r1", "EC brainpoolP256r1", "EC brainpoolP384r1", "EC brainpoolP512r1", "Ed25519", "Ed448", "X25519", "X448"});
+            algoCombo = new JComboBox<>(filterCurve448(SUBKEY_ALGOS, curve448Enabled));
             expCombo = new JComboBox<>(expirationOptions());
             signCb = new JCheckBox("Sign", true);
             encryptCb = new JCheckBox("Encrypt", true);

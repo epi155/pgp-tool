@@ -22,7 +22,7 @@ public final class Cli {
         }
     }
 
-    public static int run(String[] args, boolean privateExtensions) throws Exception {
+    public static int run(String[] args, boolean privateExtensions, boolean curve448) throws Exception {
         String cmd = args[0];
         Args a = new Args(Arrays.copyOfRange(args, 1, args.length));
         switch (cmd) {
@@ -31,7 +31,7 @@ public final class Cli {
                 return ListCommand.run(a);
             case "--generate":
             case "-g":
-                return GenerateCommand.run(a);
+                return GenerateCommand.run(a, curve448);
             case "--encrypt":
             case "-e":
                 return EncryptCommand.run(a, privateExtensions);
@@ -55,6 +55,8 @@ public final class Cli {
                 + "  -p, --private      Enable private extension algorithms (Serpent,\n"
                 + "                     ChaCha20-Poly1305, ASCON ciphers, XZ compression,\n"
                 + "                     SHA3 hashes).\n"
+                + "  --curve448         Enable Ed448/X448 key generation (not yet\n"
+                + "                     supported by gpg).\n"
                 + "                     Place it before the command, e.g. pgp-tool -p -e ...\n"
                 + "\n"
                 + "Run a command with -h or --help for its options, e.g. pgp-tool -e --help.\n"

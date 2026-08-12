@@ -20,7 +20,7 @@ public final class GenerateCommand {
 
     private GenerateCommand() {}
 
-    public static int run(Args args) throws Exception {
+    public static int run(Args args, boolean curve448Enabled) throws Exception {
         if (args.flag("--help") || args.flag("-h")) {
             System.out.println(usage());
             return 0;
@@ -60,7 +60,7 @@ public final class GenerateCommand {
             throw new CliException("--output <dir> is required", true);
         }
 
-        KeyConfig.KeySpec master = parseSpec(masterSpec, true);
+        KeyConfig.KeySpec master = parseSpec(masterSpec, true, curve448Enabled);
         if (masterEncrypt) {
             if (master.getAlgorithm() != KeyConfig.KeySpec.Algorithm.RSA) {
                 throw new CliException("--master-encrypt is only valid for an RSA master key", true);
@@ -73,7 +73,7 @@ public final class GenerateCommand {
         config.setUserId(userId);
         config.setMasterKey(master);
         for (String s : subSpecs) {
-            config.getSubKeys().add(parseSpec(s, false));
+            config.getSubKeys().add(parseSpec(s, false, curve448Enabled));
         }
 
         try {
@@ -129,7 +129,7 @@ public final class GenerateCommand {
         }
     }
 
-    private static KeyConfig.KeySpec parseSpec(String token, boolean isMaster) throws CliException {
+    private static KeyConfig.KeySpec parseSpec(String token, boolean isMaster, boolean curve448Enabled) throws CliException {
         String[] parts = token.split(":", -1);
         if (parts.length > 3) {
             throw new CliException("Invalid key spec '" + token + "' (expected ALGO[:FLAGS[:EXP]])", true);
@@ -163,12 +163,18 @@ public final class GenerateCommand {
         } else if (algo.equals("ED25519")) {
             spec.setAlgorithm(KeyConfig.KeySpec.Algorithm.EDDSA);
         } else if (algo.equals("ED448")) {
+            if (!curve448Enabled) {
+                throw new CliException("Ed448 keys are not supported by gpg yet; requires --curve448", true);
+            }
             spec.setAlgorithm(KeyConfig.KeySpec.Algorithm.ED448);
         } else if (algo.equals("X25519")) {
             if (isMaster) throw new CliException("X25519 cannot be used as a master key", true);
             spec.setAlgorithm(KeyConfig.KeySpec.Algorithm.XDH);
         } else if (algo.equals("X448")) {
             if (isMaster) throw new CliException("X448 cannot be used as a master key", true);
+            if (!curve448Enabled) {
+                throw new CliException("X448 keys are not supported by gpg yet; requires --curve448", true);
+            }
             spec.setAlgorithm(KeyConfig.KeySpec.Algorithm.X448);
         } else {
             throw new CliException("Unknown algorithm '" + algoToken + "'", true);
@@ -265,6 +271,8 @@ public final class GenerateCommand {
                  + "                             EC-secp384r1 | EC-secp521r1 | EC-brainpoolP256r1\n"
                  + "                             EC-brainpoolP384r1 | EC-brainpoolP512r1 | Ed25519\n"
                  + "                             Ed448 | X25519 | X448\n"
+                 + "                             (Ed448/X448 need --curve448; not yet\n"
+                 + "                             supported by gpg)\n"
                  + "                             optional [:sign,encrypt,certify,authenticate]\n"
                  + "                             optional [:EXP_SECONDS]\n"
                  + "  --expiration SECONDS     Master key expiration (default never)\n"
