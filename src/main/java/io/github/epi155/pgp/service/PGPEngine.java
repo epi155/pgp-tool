@@ -289,9 +289,15 @@ public class PGPEngine {
         try (InputStream in = openInput(cipherData, progress)) {
             List<DecryptResult.EncryptionLayer> encLayers = new ArrayList<>();
             DecryptResult.Metadata.Builder metaBuilder = new DecryptResult.Metadata.Builder();
-            return parseDecryptedStreamToFile(in, encLayers, metaBuilder, tempFile,
+            List<PGPEncryptedData> openedEncData = new ArrayList<>();
+            DecryptResult result = parseDecryptedStreamToFile(in, encLayers, metaBuilder, tempFile,
                     secretKeys, publicKeys, publicKeyUserIdByKeyId, secretKeyUserIds,
-                    pbePasswords, decodeText);
+                    pbePasswords, openedEncData, decodeText);
+            verifyEncryptionIntegrity(openedEncData);
+            while (in.read() >= 0) {
+                // read to EOF: enforces the armored CRC24 check on the '=XXXX' line
+            }
+            return result;
         }
     }
 
@@ -379,6 +385,7 @@ public class PGPEngine {
                                                        Map<Long, String> publicKeyUserIdByKeyId,
                                                        Map<Long, String> secretKeyUserIds,
                                                        List<char[]> pbePasswords,
+                                                       List<PGPEncryptedData> openedEncData,
                                                        boolean decodeText) throws Exception {
         JcaPGPObjectFactory plainFact = new JcaPGPObjectFactory(clearStream);
         Object message = plainFact.nextObject();
@@ -386,10 +393,10 @@ public class PGPEngine {
         // Nested encryption layer
         if (message instanceof PGPEncryptedDataList) {
             InputStream innerStream = decryptLayer((PGPEncryptedDataList) message, encLayers,
-                    secretKeys, secretKeyUserIds, pbePasswords);
+                    secretKeys, secretKeyUserIds, pbePasswords, openedEncData);
             return parseDecryptedStreamToFile(innerStream, encLayers, metaBuilder, tempFile,
                     secretKeys, publicKeys, publicKeyUserIdByKeyId, secretKeyUserIds,
-                    pbePasswords, decodeText);
+                    pbePasswords, openedEncData, decodeText);
         }
 
         // Inner content
@@ -435,7 +442,8 @@ public class PGPEngine {
                                       List<DecryptResult.EncryptionLayer> encLayers,
                                       List<PGPSecretKey> secretKeys,
                                       Map<Long, String> secretKeyUserIds,
-                                      List<char[]> pbePasswords) throws Exception {
+                                      List<char[]> pbePasswords,
+                                      List<PGPEncryptedData> openedEncData) throws Exception {
         // Try PBE if passwords are available
         if (pbePasswords != null && !pbePasswords.isEmpty()) {
             for (Iterator<PGPEncryptedData> it = encList.getEncryptedDataObjects(); it.hasNext();) {
@@ -447,6 +455,7 @@ public class PGPEngine {
                     encLayers.add(new DecryptResult.EncryptionLayer(
                             DecryptResult.EncryptionLayer.Type.PASSWORD, symAlgo, 0,
                             null, null, null));
+                    openedEncData.add(ed);
                     return ((PGPPBEEncryptedData) ed).getDataStream(pbeFactory);
                 }
             }
@@ -466,6 +475,7 @@ public class PGPEngine {
                     encLayers.add(new DecryptResult.EncryptionLayer(
                             DecryptResult.EncryptionLayer.Type.PASSWORD, symAlgo, 0,
                             null, null, null));
+                    openedEncData.add(ed);
                     return ((PGPPBEEncryptedData) ed).getDataStream(pbeFactory);
                 }
             }
@@ -531,6 +541,7 @@ public class PGPEngine {
                             encData.getKeyIdentifier().getKeyId(), allRecipientIds, uid));
                     passphraseCache.put(sk.getKeyID(), passphrase);
 
+                    openedEncData.add(encData);
                     return clearStream;
                 } catch (Exception e) {
                     lastError = e;
@@ -545,6 +556,18 @@ public class PGPEngine {
                 .orElse("");
         throw new PGPException("No matching private key found.\n"
                 + "Key IDs required by the message: " + keyIds);
+    }
+
+    // ─── Integrity verification (MDC + armored CRC24) ────────────
+
+    private void verifyEncryptionIntegrity(List<PGPEncryptedData> openedEncData) throws Exception {
+        for (int i = openedEncData.size() - 1; i >= 0; i--) {
+            PGPEncryptedData ed = openedEncData.get(i);
+            if (!ed.isIntegrityProtected()) continue;
+            if (!ed.verify()) {
+                throw new PGPException("Integrity check failed (MDC)");
+            }
+        }
     }
 
     // ─── parseCompressed → temp file ─────────────────────────────
