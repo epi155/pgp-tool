@@ -100,7 +100,8 @@ public class PGPTool {
         System.out.println();
         System.out.println("Options:");
         System.out.println("  -k, --key        Enable the Key generation tab");
-        System.out.println("  -a, --advanced   Enable advanced multi-signer and multi-layer encryption");
+        System.out.println("  -a, --advanced   Enable advanced multi-signer, multi-layer encryption");
+        System.out.println("                    and multiple user IDs for key generation");
         System.out.println("  -p, --private    Enable private extension algorithms (Serpent,");
         System.out.println("                    ChaCha20-Poly1305, ASCON ciphers, XZ compression,");
         System.out.println("                    SHA3 hashes)");

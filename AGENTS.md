@@ -75,7 +75,8 @@ Default compression is ZLIB (same as the GUI and gpg).
 - Packages: `model/` (data classes), `service/` (PGP logic), `ui/` (Swing), `cli/` (headless batch commands)
 - Entry: `io.github.epi155.pgp.PGPTool`
 - `PGPEngine` is the core — all encrypt/decrypt/sign/verify logic, ~770 lines, stateful (passphrase cache, providers)
-- `KeyGeneratorService.generate()` is static, uses `PGPKeyRingGenerator`
+- `KeyGeneratorService.generate()` is static, uses `PGPKeyRingGenerator`. **Multiple user IDs**: `KeyConfig.userIds` is a list; the first UID goes to `PGPKeyRingGenerator`, extra UIDs get positive self-certifications via
+`PGPSignatureGenerator` + `PGPPublicKeyRing.insertPublicKey` (replaces the master by keyID — do NOT `removePublicKey` the master first, the intermediate ring is invalid), then `PGPSecretKeyRing.replacePublicKeys` syncs the secret ring. CLI: `--user-id` repeatable; GUI: only in advanced mode (`KeyTabPanel(advanced, curve448)` adds "Add User ID"/"X Remove" rows plus an up-arrow icon button on each row that swaps the row's text with the one above — the first row swaps with the primary, non-removable User ID field)
 - `KeyringLoader.loadPublicKeys()` / `loadSecretKeys()` return `KeyBundle`; handle armored + binary keyrings
 - `KeyringLoader` also resolves each key's EC curve name (`PGPKeyInfo.curve`, `KeyringLoader.curveName()`) from the key packet: `X25519/X448/Ed448/Ed25519` packet classes plus `ECPublicBCPGKey.getCurveOID()` mapped through `ECNamedCurveTable.getName()` with aliases (`curve25519`→`X25519`, `1.3.6.1.4.1.11591.15.1`→`Ed25519`, `prime256v1/384v1/521v1`→`secp256r1/384r1/521r1`); shown as `ECDH 256b (secp256r1)` in `--list` and the GUI tree, and in decrypt metadata (`DecryptResult.EncryptionLayer.curve`, `SignerInfo.curve` → `ECDH (X25519)/AES-256`, `ECDSA (brainpoolP384r1)`) for both CLI and GUI
 - `cli/KeySelector` flattens `KeyBundle` (masters + nested subkeys), resolves `#id` filters, checks

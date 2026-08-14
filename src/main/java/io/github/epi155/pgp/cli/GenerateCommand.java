@@ -26,18 +26,18 @@ public final class GenerateCommand {
             return 0;
         }
         boolean quiet = false;
-        String userId = null;
         String masterSpec = "RSA-3072";
         boolean masterEncrypt = false;
         long expiration = 0;
         String passphrase = null;
         String outputDir = null;
         List<String> subSpecs = new ArrayList<>();
+        List<String> userIds = new ArrayList<>();
 
         while (args.hasNext()) {
             String tok = args.peek();
             switch (tok) {
-                case "--user-id": userId = args.value("--user-id"); break;
+                case "--user-id": userIds.add(args.value("--user-id")); break;
                 case "--master": masterSpec = args.value("--master"); break;
                 case "--master-encrypt": args.flag("--master-encrypt"); masterEncrypt = true; break;
                 case "--expiration": expiration = parseLong(args.value("--expiration"), "--expiration"); break;
@@ -53,7 +53,7 @@ public final class GenerateCommand {
             }
         }
 
-        if (userId == null || userId.isEmpty()) {
+        if (userIds.isEmpty()) {
             throw new CliException("--user-id is required (e.g. \"Name <email@example.com>\")", true);
         }
         if (outputDir == null) {
@@ -70,7 +70,7 @@ public final class GenerateCommand {
         master.setExpirationSeconds(expiration);
 
         KeyConfig config = new KeyConfig();
-        config.setUserId(userId);
+        config.setUserIds(userIds);
         config.setMasterKey(master);
         for (String s : subSpecs) {
             config.getSubKeys().add(parseSpec(s, false, curve448Enabled));
@@ -85,7 +85,7 @@ public final class GenerateCommand {
 
             Path dir = Path.of(outputDir);
             Files.createDirectories(dir);
-            String name = suggestedName(userId);
+            String name = suggestedName(userIds.get(0));
             Path pubPath = dir.resolve(name + "-public.asc");
             Path secPath = dir.resolve(name + "-secret.asc");
 
@@ -263,7 +263,8 @@ public final class GenerateCommand {
         return "Usage: pgp-tool -g, --generate --user-id \"Name <email>\" [options]\n"
                 + "Generate a new PGP key pair (armored .asc files) into the output directory.\n\n"
                 + "Options:\n"
-                + "  --user-id UID            Identity, e.g. \"Alice <alice@example.com>\" (required)\n"
+                + "  --user-id UID            Identity, e.g. \"Alice <alice@example.com>\",\n"
+                 + "                             repeatable for multiple user IDs (required)\n"
                 + "  --master SPEC            Master key spec (default RSA-3072)\n"
                 + "  --master-encrypt         Also allow the RSA master to encrypt\n"
                  + "  --subkey SPEC            Subkey spec, repeatable:\n"

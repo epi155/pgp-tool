@@ -28,6 +28,7 @@ public class KeyTabPanel extends JPanel {
             "X25519", "X448"};
 
     private final JTextField userIdField;
+    private final List<UserIDRow> uidRows = new ArrayList<>();
     private final JComboBox<String> masterAlgoCombo;
     private final JComboBox<String> masterExpCombo;
     private final JCheckBox masterCertifyCb;
@@ -41,10 +42,13 @@ public class KeyTabPanel extends JPanel {
     private final JButton savePrivBtn;
 
     private GeneratedKey generatedKey;
+    private JPanel extraUidsPanel;
     private final boolean curve448Enabled;
+    private final boolean advanced;
 
-    public KeyTabPanel(boolean curve448Enabled) {
+    public KeyTabPanel(boolean advanced, boolean curve448Enabled) {
         this.curve448Enabled = curve448Enabled;
+        this.advanced = advanced;
         setLayout(new BorderLayout(10, 10));
         setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
@@ -61,10 +65,26 @@ public class KeyTabPanel extends JPanel {
         userIdField = new JTextField(40);
         configPanel.add(userIdField, c);
 
-        c.gridy = 2; c.gridwidth = 2;
+        int gy = 2;
+        if (advanced) {
+            extraUidsPanel = new JPanel();
+            extraUidsPanel.setLayout(new BoxLayout(extraUidsPanel, BoxLayout.Y_AXIS));
+            JButton addUidBtn = new JButton("+ Add User ID");
+            addUidBtn.addActionListener(e -> addUserIDRow());
+            JPanel extraWrapper = new JPanel(new BorderLayout());
+            extraWrapper.add(extraUidsPanel, BorderLayout.NORTH);
+            extraWrapper.add(addUidBtn, BorderLayout.SOUTH);
+            c.gridy = gy; c.gridwidth = 2;
+            configPanel.add(extraWrapper, c);
+            gy++;
+        } else {
+            extraUidsPanel = null;
+        }
+        c.gridy = gy; c.gridwidth = 2;
         configPanel.add(Box.createVerticalStrut(10), c);
+        gy++;
 
-        c.gridy = 3; c.gridwidth = 1;
+        c.gridy = gy; c.gridwidth = 1;
         TitledBorder masterBorder = BorderFactory.createTitledBorder("Master Key");
         JPanel masterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
         masterPanel.setBorder(masterBorder);
@@ -86,8 +106,9 @@ public class KeyTabPanel extends JPanel {
         masterPanel.add(masterEncryptCb);
         updateMasterCheckboxes();
         configPanel.add(masterPanel, c);
+        gy++;
 
-        c.gridy = 4;
+        c.gridy = gy;
         subKeysPanel = new JPanel();
         subKeysPanel.setLayout(new BoxLayout(subKeysPanel, BoxLayout.Y_AXIS));
         subKeysPanel.setBorder(BorderFactory.createTitledBorder("Subkeys"));
@@ -99,16 +120,18 @@ public class KeyTabPanel extends JPanel {
         subKeysWrapper.add(subKeysPanel, BorderLayout.NORTH);
         subKeysWrapper.add(addSubBtn, BorderLayout.SOUTH);
         configPanel.add(subKeysWrapper, c);
+        gy++;
 
-        c.gridy = 5; c.gridwidth = 1;
+        c.gridy = gy; c.gridwidth = 1;
         generateBtn = new JButton("Generate");
         generateBtn.addActionListener(e -> onGenerate());
 
         JPanel generatePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
         generatePanel.add(generateBtn);
         configPanel.add(generatePanel, c);
+        gy++;
 
-        c.gridy = 6; c.weighty = 0;
+        c.gridy = gy; c.weighty = 0;
         configPanel.add(Box.createVerticalStrut(10), c);
 
         JPanel scrollConfig = new JPanel(new BorderLayout());
@@ -164,16 +187,30 @@ public class KeyTabPanel extends JPanel {
         subKeysPanel.repaint();
     }
 
+    private void addUserIDRow() {
+        UserIDRow row = new UserIDRow();
+        uidRows.add(row);
+        extraUidsPanel.add(row.panel);
+        extraUidsPanel.revalidate();
+        extraUidsPanel.repaint();
+    }
+
     private void onGenerate() {
-        String userId = userIdField.getText().trim();
-        if (userId.isEmpty()) {
+        List<String> userIds = new ArrayList<>();
+        String primaryUserId = userIdField.getText().trim();
+        if (!primaryUserId.isEmpty()) userIds.add(primaryUserId);
+        for (UserIDRow row : uidRows) {
+            String uid = row.field.getText().trim();
+            if (!uid.isEmpty()) userIds.add(uid);
+        }
+        if (userIds.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Enter a User ID.",
                     "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         KeyConfig config = new KeyConfig();
-        config.setUserId(userId);
+        config.setUserIds(userIds);
         config.setMasterKey(buildMasterSpec());
         config.getSubKeys().addAll(buildSubSpecs());
 
@@ -377,6 +414,63 @@ public class KeyTabPanel extends JPanel {
             }
         } catch (Exception ex) {
             UIUtils.showError(this, "Error during save:\n" + ex.getMessage(), ex);
+        }
+    }
+
+    private class UserIDRow {
+        final JPanel panel;
+        final JTextField field;
+
+        UserIDRow() {
+            panel = new JPanel(new BorderLayout(5, 2));
+            field = new JTextField(40);
+            JButton removeBtn = new JButton("X Remove");
+            removeBtn.addActionListener(e -> {
+                uidRows.remove(this);
+                extraUidsPanel.remove(panel);
+                extraUidsPanel.revalidate();
+                extraUidsPanel.repaint();
+            });
+            JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+            JButton upBtn = new JButton(upArrowIcon());
+            upBtn.setToolTipText("Move up");
+            upBtn.addActionListener(e -> {
+                int idx = uidRows.indexOf(this);
+                JTextField above = idx > 0 ? uidRows.get(idx - 1).field : userIdField;
+                String tmp = field.getText();
+                field.setText(above.getText());
+                above.setText(tmp);
+            });
+            buttons.add(upBtn);
+            buttons.add(removeBtn);
+            panel.add(field, BorderLayout.CENTER);
+            panel.add(buttons, BorderLayout.EAST);
+        }
+    }
+
+    private static Icon upArrowIcon() {
+        Icon icon = UIManager.getIcon("Table.ascendingSortIcon");
+        return icon != null ? icon : new ArrowUpIcon();
+    }
+
+    private static class ArrowUpIcon implements Icon {
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            int w = getIconWidth();
+            g2.setColor(c.isEnabled() ? UIManager.getColor("controlText") : UIManager.getColor("textInactiveText"));
+            g2.fillPolygon(new int[]{x + w / 2, x, x + w}, new int[]{y, y + w - 1, y + w - 1}, 3);
+            g2.dispose();
+        }
+
+        @Override
+        public int getIconWidth() {
+            return 8;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return 8;
         }
     }
 

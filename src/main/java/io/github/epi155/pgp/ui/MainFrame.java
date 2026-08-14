@@ -28,7 +28,7 @@ public class MainFrame extends JFrame {
         receivePanel = new ReceivePanel(engine);
         tabbedPane.addTab("Receive", receivePanel);
         if (showKeyTab) {
-            tabbedPane.addTab("Key", new KeyTabPanel(curve448));
+            tabbedPane.addTab("Key", new KeyTabPanel(advanced, curve448));
         }
 
         add(tabbedPane);

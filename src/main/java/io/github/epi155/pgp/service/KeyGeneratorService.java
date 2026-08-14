@@ -38,7 +38,8 @@ public class KeyGeneratorService {
         KeyPair masterJavaPair = generateKeyPair(config.getMasterKey());
         JcaPGPKeyPair masterKeyPair = new JcaPGPKeyPair(masterAlgoTag, masterJavaPair, new Date());
 
-        String userId = config.getUserId();
+        List<String> userIds = config.getUserIds();
+        String userId = userIds.get(0);
 
         PGPSignatureSubpacketGenerator hashedGen = new PGPSignatureSubpacketGenerator();
         int masterFlags = 0;
@@ -126,6 +127,18 @@ public class KeyGeneratorService {
 
         PGPPublicKeyRing pubRing = ringGen.generatePublicKeyRing();
         PGPSecretKeyRing secRing = ringGen.generateSecretKeyRing();
+
+        if (userIds.size() > 1) {
+            PGPPublicKey masterPub = pubRing.getPublicKey();
+            PGPSignatureGenerator sigGen = new PGPSignatureGenerator(signerBuilder);
+            sigGen.init(PGPSignature.POSITIVE_CERTIFICATION, masterKeyPair.getPrivateKey());
+            for (int i = 1; i < userIds.size(); i++) {
+                PGPSignature cert = sigGen.generateCertification(userIds.get(i), masterPub);
+                masterPub = PGPPublicKey.addCertification(masterPub, userIds.get(i), cert);
+            }
+            pubRing = PGPPublicKeyRing.insertPublicKey(pubRing, masterPub);
+            secRing = PGPSecretKeyRing.replacePublicKeys(secRing, pubRing);
+        }
 
         return new GeneratedKey(pubRing, secRing, masterKeyPair, subKeyPairs);
     }
