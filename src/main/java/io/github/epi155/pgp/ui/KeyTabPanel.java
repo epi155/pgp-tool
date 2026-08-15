@@ -15,6 +15,7 @@ import java.awt.*;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class KeyTabPanel extends JPanel {
@@ -122,16 +123,7 @@ public class KeyTabPanel extends JPanel {
         configPanel.add(subKeysWrapper, c);
         gy++;
 
-        c.gridy = gy; c.gridwidth = 1;
-        generateBtn = new JButton("Generate");
-        generateBtn.addActionListener(e -> onGenerate());
-
-        JPanel generatePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
-        generatePanel.add(generateBtn);
-        configPanel.add(generatePanel, c);
-        gy++;
-
-        c.gridy = gy; c.weighty = 0;
+        c.gridy = gy; c.gridwidth = 1; c.weighty = 0;
         configPanel.add(Box.createVerticalStrut(10), c);
 
         JPanel scrollConfig = new JPanel(new BorderLayout());
@@ -148,12 +140,29 @@ public class KeyTabPanel extends JPanel {
         resultPanel.add(treePanel, BorderLayout.CENTER);
 
         JPanel savePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
+        generateBtn = new JButton("Generate") {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                GradientPaint gp = new GradientPaint(
+                        0, 0, Color.decode("#FFD700"), 0, getHeight(), Color.decode("#DAA520"));
+                g2.setPaint(gp);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        generateBtn.setContentAreaFilled(false);
+        generateBtn.setOpaque(false);
+        generateBtn.setForeground(new Color(0x302681));
+        generateBtn.addActionListener(e -> onGenerate());
         savePubBtn = new JButton("Save Public Key");
         savePubBtn.setEnabled(false);
         savePubBtn.addActionListener(e -> onSavePublic());
         savePrivBtn = new JButton("Save Private Key");
         savePrivBtn.setEnabled(false);
         savePrivBtn.addActionListener(e -> onSavePrivate());
+        savePanel.add(generateBtn);
         savePanel.add(savePubBtn);
         savePanel.add(savePrivBtn);
         resultPanel.add(savePanel, BorderLayout.SOUTH);
@@ -185,6 +194,24 @@ public class KeyTabPanel extends JPanel {
         subKeysPanel.add(row.panel);
         subKeysPanel.revalidate();
         subKeysPanel.repaint();
+        refreshSubkeyUpButtons();
+    }
+
+    private void moveSubKeyUp(SubKeyRow row) {
+        int idx = subKeyRows.indexOf(row);
+        if (idx <= 0) return;
+        Collections.swap(subKeyRows, idx, idx - 1);
+        subKeysPanel.removeAll();
+        for (SubKeyRow r : subKeyRows) subKeysPanel.add(r.panel);
+        subKeysPanel.revalidate();
+        subKeysPanel.repaint();
+        refreshSubkeyUpButtons();
+    }
+
+    private void refreshSubkeyUpButtons() {
+        for (int i = 0; i < subKeyRows.size(); i++) {
+            subKeyRows.get(i).upBtn.setEnabled(i > 0);
+        }
     }
 
     private void addUserIDRow() {
@@ -481,6 +508,7 @@ public class KeyTabPanel extends JPanel {
         final JCheckBox signCb;
         final JCheckBox encryptCb;
         final JCheckBox authCb;
+        final JButton upBtn;
         private boolean savedSign = true;
         private boolean savedEncrypt = true;
         private boolean savedAuth = false;
@@ -509,13 +537,18 @@ public class KeyTabPanel extends JPanel {
             encryptCb.addItemListener(checkboxSaver);
             authCb.addItemListener(checkboxSaver);
             algoCombo.addActionListener(e -> updateSubkeyCheckboxes(this));
+            JButton upBtn = new JButton(upArrowIcon());
+            upBtn.setToolTipText("Move up");
+            upBtn.addActionListener(e -> moveSubKeyUp(this));
             JButton removeBtn = new JButton("X Remove");
             removeBtn.addActionListener(e -> {
                 subKeyRows.remove(this);
                 subKeysPanel.remove(panel);
                 subKeysPanel.revalidate();
                 subKeysPanel.repaint();
+                refreshSubkeyUpButtons();
             });
+            this.upBtn = upBtn;
             panel.add(new JLabel("Type:"));
             panel.add(algoCombo);
             panel.add(new JLabel("Expiry:"));
@@ -523,6 +556,7 @@ public class KeyTabPanel extends JPanel {
             panel.add(signCb);
             panel.add(encryptCb);
             panel.add(authCb);
+            panel.add(upBtn);
             panel.add(removeBtn);
             updateSubkeyCheckboxes(this);
         }
