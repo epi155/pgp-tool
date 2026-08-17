@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>io.github.epi155</groupId>
     <artifactId>pgp-tool</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>PGP Tool</name>
 
@@ -40,7 +40,7 @@
         <connection>scm:git:git://github.com/epi155/pgp-tool.git</connection>
         <developerConnection>scm:git:https://github.com/epi155/pgp-tool.git</developerConnection>
         <url>https://github.com/epi155/pgp-tool.git</url>
-        <tag>v1.0.0</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <dependencies>
