@@ -4,6 +4,8 @@ import io.github.epi155.pgp.model.CompoundCodec;
 import io.github.epi155.pgp.model.CompoundMessage;
 import io.github.epi155.pgp.model.KeyBundle;
 import io.github.epi155.pgp.model.PGPKeyInfo;
+import io.github.epi155.pgp.model.TarArchive;
+import io.github.epi155.pgp.model.TarEntry;
 import io.github.epi155.pgp.service.*;
 import org.bouncycastle.bcpg.CompressionAlgorithmTags;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
@@ -12,6 +14,8 @@ import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPSecretKey;
 
 import javax.swing.*;
+import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -55,8 +59,9 @@ public class SendPanel extends JPanel {
     private final JButton clearSelButton;
     private final JToggleButton showViewBtn;
     private final JComboBox<String> compAlgoCombo;
-    private final JList<String> attachList;
-    private final DefaultListModel<String> attachListModel;
+    private final JTree attachTree;
+    private final DefaultTreeModel attachTreeModel;
+    private final AttachmentNode attachRoot;
     private final List<File> attachmentFiles = new ArrayList<>();
     private final JButton addAttachButton;
     private final JButton removeAttachButton;
@@ -209,10 +214,13 @@ public class SendPanel extends JPanel {
         centerPanel.add(clearSelButton);
         centerPanel.add(showViewBtn);
 
-        attachListModel = new DefaultListModel<>();
-        attachList = new JList<>(attachListModel);
-        attachList.setVisibleRowCount(3);
-        JScrollPane attachScroll = new JScrollPane(attachList);
+        attachRoot = AttachmentNode.root("Attachments");
+        attachTreeModel = new DefaultTreeModel(attachRoot);
+        attachTree = new JTree(attachTreeModel);
+        attachTree.setRootVisible(false);
+        attachTree.setShowsRootHandles(true);
+        attachTree.setVisibleRowCount(3);
+        JScrollPane attachScroll = new JScrollPane(attachTree);
         attachScroll.setBorder(BorderFactory.createTitledBorder("Attachments"));
 
         JSplitPane compoundSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
@@ -255,9 +263,9 @@ public class SendPanel extends JPanel {
         addSignerTab();
         addAttachButton.addActionListener(this::addAttachment);
         removeAttachButton.addActionListener(this::removeAttachment);
-        attachList.addListSelectionListener(e ->
-                removeAttachButton.setEnabled(!attachList.isSelectionEmpty()));
-        attachList.setTransferHandler(new TransferHandler() {
+        attachTree.addTreeSelectionListener(e ->
+                removeAttachButton.setEnabled(attachTree.getSelectionCount() > 0));
+        attachTree.setTransferHandler(new TransferHandler() {
             @Override
             public boolean canImport(TransferSupport support) {
                 return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
@@ -268,12 +276,26 @@ public class SendPanel extends JPanel {
                 try {
                     java.util.List<File> files = (java.util.List<File>) support.getTransferable()
                             .getTransferData(DataFlavor.javaFileListFlavor);
+                    AttachmentNode targetNode = attachRoot;
+                    if (support.isDrop()) {
+                        TreePath dropPath = attachTree.getClosestPathForLocation(
+                                support.getDropLocation().getDropPoint().x,
+                                support.getDropLocation().getDropPoint().y);
+                        if (dropPath != null) {
+                            Object node = dropPath.getLastPathComponent();
+                            if (node instanceof AttachmentNode) {
+                                AttachmentNode an = (AttachmentNode) node;
+                                targetNode = an.isDirectory() ? an : (an.getParent() instanceof AttachmentNode ? (AttachmentNode) an.getParent() : attachRoot);
+                            }
+                        }
+                    }
                     for (File f : files) {
                         if (!attachmentFiles.contains(f)) {
                             attachmentFiles.add(f);
-                            attachListModel.addElement(f.getName());
+                            addFileToTree(f, targetNode);
                         }
                     }
+                    attachTreeModel.reload();
                     updateOutputMode();
                     return true;
                 } catch (Exception ex) { return false; }
@@ -340,8 +362,9 @@ public class SendPanel extends JPanel {
                                 }
                             }
                             attachmentFiles.add(f);
-                            attachListModel.addElement(f.getName());
+                            addFileToTree(f);
                         }
+                        attachTreeModel.reload();
                         updateOutputMode();
                         return true;
                     } catch (Exception ex) { return false; }
@@ -484,20 +507,63 @@ public class SendPanel extends JPanel {
         fc.setMultiSelectionEnabled(true);
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             for (File f : fc.getSelectedFiles()) {
-                attachmentFiles.add(f);
-                attachListModel.addElement(f.getName());
+                if (!attachmentFiles.contains(f)) {
+                    attachmentFiles.add(f);
+                    addFileToTree(f);
+                }
             }
+            attachTreeModel.reload();
             updateOutputMode();
         }
     }
 
     private void removeAttachment(ActionEvent e) {
-        int idx = attachList.getSelectedIndex();
-        if (idx >= 0) {
-            attachmentFiles.remove(idx);
-            attachListModel.remove(idx);
-            updateOutputMode();
+        TreePath[] paths = attachTree.getSelectionPaths();
+        if (paths == null || paths.length == 0) return;
+        for (TreePath path : paths) {
+            Object node = path.getLastPathComponent();
+            if (node instanceof AttachmentNode) {
+                AttachmentNode an = (AttachmentNode) node;
+                if (an.getFile() != null) {
+                    attachmentFiles.remove(an.getFile());
+                }
+            }
         }
+        attachRoot.removeAllChildren();
+        for (File f : attachmentFiles) {
+            addFileToTree(f);
+        }
+        attachTreeModel.reload();
+        updateOutputMode();
+    }
+
+    private void addFileToTree(File file) {
+        addFileToTree(file, attachRoot);
+    }
+
+    private void addFileToTree(File file, AttachmentNode targetNode) {
+        String pathStr = file.toPath().toString().replace("\\", "/");
+        String[] parts = pathStr.split("/");
+        AttachmentNode current = targetNode;
+        for (int i = 0; i < parts.length - 1; i++) {
+            AttachmentNode child = findChildDir(current, parts[i]);
+            if (child == null) {
+                child = AttachmentNode.directory(parts[i]);
+                current.add(child);
+            }
+            current = child;
+        }
+        current.add(AttachmentNode.ofFile(file));
+    }
+
+    private AttachmentNode findChildDir(AttachmentNode parent, String name) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            AttachmentNode child = (AttachmentNode) parent.getChildAt(i);
+            if (child.isDirectory() && child.getDisplayName().equals(name)) {
+                return child;
+            }
+        }
+        return null;
     }
 
     private void chooseOutputFile() {
@@ -837,7 +903,8 @@ public class SendPanel extends JPanel {
                 @Override
                 protected Void doInBackground() throws Exception {
                     String fileName;
-                    byte[] data;
+                    byte[] data = null;
+                    TarArchive tarData = null;
                     boolean armor;
                     if (fHasAttachments) {
                         boolean rawFile = fPlainText.isEmpty() && attachmentFiles.size() == 1;
@@ -845,12 +912,16 @@ public class SendPanel extends JPanel {
                         if (rawFile) {
                             data = Files.readAllBytes(attachmentFiles.get(0).toPath());
                         } else {
-                            List<CompoundMessage.Attachment> atts = new ArrayList<>();
-                            for (File f : attachmentFiles) {
-                                long mtime = Files.getLastModifiedTime(f.toPath()).toMillis();
-                                atts.add(new CompoundMessage.Attachment(f.getName(), Files.readAllBytes(f.toPath()), mtime));
+                            tarData = new TarArchive("_CONSOLE");
+                            if (fPlainText != null && !fPlainText.isEmpty()) {
+                                tarData.setPlainText(fPlainText);
                             }
-                            data = CompoundCodec.encode(new CompoundMessage(fPlainText, atts));
+                            for (File f : attachmentFiles) {
+                                TarEntry te = TarEntry.fromPath(f.toPath(), f.getName());
+                                long mtime = Files.getLastModifiedTime(f.toPath()).toMillis();
+                                te.setModificationTime(mtime);
+                                tarData.addEntry(te);
+                            }
                         }
                         armor = armorCheckBox.isSelected();
                     } else {
@@ -862,26 +933,42 @@ public class SendPanel extends JPanel {
                     byte[] encrypted;
                     if (!fEncEnabled) {
                         ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-                        engine.encryptCompress(data, fileName, bOut,
-                                fSignKeys, fSignPassphrases, compAlgo, fHashAlgos, armor, progress);
+                        if (tarData != null) {
+                            engine.encryptCompress(tarData, fileName, bOut,
+                                    fSignKeys, fSignPassphrases, compAlgo, fHashAlgos, armor, progress);
+                        } else {
+                            engine.encryptCompress(data, fileName, bOut,
+                                    fSignKeys, fSignPassphrases, compAlgo, fHashAlgos, armor, progress);
+                        }
                         encrypted = bOut.toByteArray();
                     } else {
-                        encrypted = data;
-                        boolean firstLayer = true;
+                        encrypted = null;
                         for (int i = 0; i < fLayerIsPassword.size(); i++) {
                             boolean lastLayer = (i == fLayerIsPassword.size() - 1);
                             int layerSymAlgo = fLayerAlgos.get(i);
                             boolean isPw = fLayerIsPassword.get(i);
                             ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-                            if (firstLayer) {
+                            if (encrypted == null) {
                                 if (isPw) {
-                                    engine.encryptPassword(encrypted, fileName, bOut, fPasswordLayers.get(i),
-                                            fSignKeys, fSignPassphrases, layerSymAlgo, compAlgo, fHashAlgos,
-                                            lastLayer && armor, progress);
+                                    if (tarData != null) {
+                                        engine.encryptPassword(tarData, fileName, bOut, fPasswordLayers.get(i),
+                                                fSignKeys, fSignPassphrases, layerSymAlgo, compAlgo, fHashAlgos,
+                                                lastLayer && armor, progress);
+                                    } else {
+                                        engine.encryptPassword(data, fileName, bOut, fPasswordLayers.get(i),
+                                                fSignKeys, fSignPassphrases, layerSymAlgo, compAlgo, fHashAlgos,
+                                                lastLayer && armor, progress);
+                                    }
                                 } else {
-                                    engine.encrypt(encrypted, fileName, bOut, fEncKeyLayers.get(i),
-                                            fSignKeys, fSignPassphrases, layerSymAlgo, compAlgo, fHashAlgos,
-                                            lastLayer && armor, progress);
+                                    if (tarData != null) {
+                                        engine.encrypt(tarData, fileName, bOut, fEncKeyLayers.get(i),
+                                                fSignKeys, fSignPassphrases, layerSymAlgo, compAlgo, fHashAlgos,
+                                                lastLayer && armor, progress);
+                                    } else {
+                                        engine.encrypt(data, fileName, bOut, fEncKeyLayers.get(i),
+                                                fSignKeys, fSignPassphrases, layerSymAlgo, compAlgo, fHashAlgos,
+                                                lastLayer && armor, progress);
+                                    }
                                 }
                             } else {
                                 if (isPw) {
@@ -893,7 +980,6 @@ public class SendPanel extends JPanel {
                                 }
                             }
                             encrypted = bOut.toByteArray();
-                            firstLayer = false;
                         }
                     }
 

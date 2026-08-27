@@ -4,12 +4,16 @@ import io.github.epi155.pgp.model.CompoundMessage;
 import io.github.epi155.pgp.model.DecryptResult;
 import io.github.epi155.pgp.model.KeyBundle;
 import io.github.epi155.pgp.model.PGPKeyInfo;
+import io.github.epi155.pgp.model.TarArchive;
+import io.github.epi155.pgp.model.TarEntry;
 import io.github.epi155.pgp.service.KeyringLoader;
 import io.github.epi155.pgp.service.PGPEngine;
 import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPSecretKey;
 
 import javax.swing.*;
+import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
 import java.awt.*;
 import java.awt.Frame;
 import java.awt.datatransfer.DataFlavor;
@@ -44,15 +48,18 @@ public class ReceivePanel extends JPanel {
     private final JTextField cipherFileField;
     private final CardLayout inputCardLayout;
     private final JPanel inputCardPanel;
-    private final JList<String> attachList;
-    private final DefaultListModel<String> attachListModel;
+    private final JTree attachTree;
+    private final DefaultTreeModel attachTreeModel;
+    private final AttachmentNode attachRoot;
     private final JButton saveAttachButton;
+    private final JButton exportTarButton;
     private final JLabel statusLabel;
 
     private transient KeyBundle publicKeyBundle;
     private transient KeyBundle privateKeyBundle;
     private byte[] cipherBytes;
     private CompoundMessage lastCompound;
+    private TarArchive lastTarArchive;
     private final java.util.List<java.nio.file.Path> tempFiles = new java.util.ArrayList<>();
     private final java.util.List<String> publicKeyringPaths = new java.util.ArrayList<>();
     private final java.util.List<String> privateKeyringPaths = new java.util.ArrayList<>();
@@ -222,28 +229,30 @@ public class ReceivePanel extends JPanel {
         btnEast.add(cipherBrowseBtn);
         fileRow.add(btnEast, BorderLayout.EAST);
 
-        attachListModel = new DefaultListModel<>();
-        attachList = new JList<>(attachListModel);
-        attachList.setVisibleRowCount(3);
-        attachList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-        JScrollPane attachScroll = new JScrollPane(attachList);
+        attachRoot = AttachmentNode.root("Attachments");
+        attachTreeModel = new DefaultTreeModel(attachRoot);
+        attachTree = new JTree(attachTreeModel);
+        attachTree.setRootVisible(true);
+        attachTree.setShowsRootHandles(true);
+        attachTree.setVisibleRowCount(3);
+        JScrollPane attachScroll = new JScrollPane(attachTree);
         attachScroll.setBorder(BorderFactory.createTitledBorder("Attachments"));
         saveAttachButton = new JButton("Save attachment...");
         saveAttachButton.setEnabled(false);
-        attachList.addListSelectionListener(e ->
-                saveAttachButton.setEnabled(!attachList.isSelectionEmpty()));
+        exportTarButton = new JButton("Export tar...");
+        exportTarButton.setEnabled(false);
+        attachTree.addTreeSelectionListener(e ->
+                saveAttachButton.setEnabled(attachTree.getSelectionCount() > 0));
 
-        // Key bindings for attachment list
-        InputMap im = attachList.getInputMap(JComponent.WHEN_FOCUSED);
-        ActionMap am = attachList.getActionMap();
+        // Key bindings for attachment tree
+        InputMap im = attachTree.getInputMap(JComponent.WHEN_FOCUSED);
+        ActionMap am = attachTree.getActionMap();
         im.put(KeyStroke.getKeyStroke("control A"), "selectAllAttachments");
         am.put("selectAllAttachments", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                int size = attachList.getModel().getSize();
-                if (size > 0) {
-                    attachList.setSelectionInterval(0, size - 1);
-                }
+                UIUtils.expandAll(attachTree);
+                attachTree.setSelectionInterval(0, attachTree.getRowCount() - 1);
             }
         });
         im.put(KeyStroke.getKeyStroke("control S"), "saveAttachments");
@@ -253,12 +262,20 @@ public class ReceivePanel extends JPanel {
                 saveAttachments();
             }
         });
+        im.put(KeyStroke.getKeyStroke("control T"), "exportTar");
+        am.put("exportTar", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                exportTar();
+            }
+        });
 
         cipherFilePanel.add(fileRow, BorderLayout.NORTH);
         cipherFilePanel.add(attachScroll, BorderLayout.CENTER);
         JPanel fileSouth = new JPanel(new BorderLayout(5, 2));
         JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
         btnRow.add(saveAttachButton);
+        btnRow.add(exportTarButton);
         fileSouth.add(btnRow, BorderLayout.WEST);
         statusLabel = new JLabel(" ");
         statusLabel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
@@ -338,6 +355,7 @@ public class ReceivePanel extends JPanel {
         privateKeyPanel.setAddButtonVisible(true);
         decryptButton.addActionListener(this::onDecrypt);
         saveAttachButton.addActionListener(this::saveAttachment);
+        exportTarButton.addActionListener(e -> exportTar());
         showUsedBtn.addActionListener(e -> {
             if (showUsedBtn.isSelected()) {
                 if (!privateKeyPanel.getSelectedKeys().isEmpty())
@@ -527,8 +545,11 @@ public class ReceivePanel extends JPanel {
 
     private void clearDecryptResults() {
         lastCompound = null;
-        attachListModel.clear();
+        lastTarArchive = null;
+        attachRoot.removeAllChildren();
+        attachTreeModel.reload();
         saveAttachButton.setEnabled(false);
+        exportTarButton.setEnabled(false);
         verificationArea.setText("");
         encryptionMetadataArea.setText("");
         cleanupTempFiles();
@@ -575,16 +596,17 @@ public class ReceivePanel extends JPanel {
     }
 
     private void saveAttachments() {
-        int[] indices = attachList.getSelectedIndices();
-        if (indices.length == 0 || lastCompound == null) return;
+        List<AttachmentNode> selected = getSelectedLeafNodes();
+        if (selected.isEmpty()) return;
 
         JFileChooser fc = new JFileChooser();
         fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
-        fc.setDialogTitle(indices.length == 1 ? "Save Attachment" : "Save Attachments");
+        fc.setDialogTitle(selected.size() == 1 ? "Save Attachment" : "Save Attachments");
 
-        if (indices.length == 1) {
-            CompoundMessage.Attachment att = lastCompound.getAttachments().get(indices[0]);
-            fc.setSelectedFile(new File(att.getFilename()));
+        if (selected.size() == 1) {
+            AttachmentNode node = selected.get(0);
+            String name = node.getDisplayName();
+            if (name != null) fc.setSelectedFile(new File(name));
         }
 
         if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
@@ -592,37 +614,83 @@ public class ReceivePanel extends JPanel {
         Path target = fc.getSelectedFile().toPath();
         boolean isDir = Files.isDirectory(target);
 
-        if (indices.length > 1 && !isDir) {
-            UIUtils.showError(this, "Per salvare più allegati seleziona una directory.", null);
+        if (selected.size() > 1 && !isDir) {
+            UIUtils.showError(this, "To save multiple attachments, select a directory.", null);
             return;
         }
 
-        saveAttachmentsTo(indices, target, isDir);
+        saveNodesTo(selected, target, isDir);
     }
 
-    private void saveAttachmentsTo(int[] indices, Path target, boolean isDir) {
+    private List<AttachmentNode> getSelectedLeafNodes() {
+        List<AttachmentNode> result = new ArrayList<>();
+        TreePath[] paths = attachTree.getSelectionPaths();
+        if (paths == null) return result;
+        for (TreePath path : paths) {
+            Object node = path.getLastPathComponent();
+            if (node instanceof AttachmentNode) {
+                AttachmentNode an = (AttachmentNode) node;
+                if (an.isLeaf()) {
+                    result.add(an);
+                } else {
+                    collectLeafChildren(an, result);
+                }
+            }
+        }
+        return result;
+    }
+
+    private void collectLeafChildren(AttachmentNode node, List<AttachmentNode> result) {
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AttachmentNode child = (AttachmentNode) node.getChildAt(i);
+            if (child.isLeaf()) {
+                result.add(child);
+            } else {
+                collectLeafChildren(child, result);
+            }
+        }
+    }
+
+    private void saveNodesTo(List<AttachmentNode> nodes, Path target, boolean isDir) {
         Frame frame = (Frame) SwingUtilities.getWindowAncestor(this);
         ConflictResolver resolver = new ConflictResolver(frame);
         int saved = 0, skipped = 0, errors = 0;
-        for (int idx : indices) {
-            CompoundMessage.Attachment att = lastCompound.getAttachments().get(idx);
-            Path dest = isDir ? target.resolve(att.getFilename()) : target;
-
+        for (AttachmentNode node : nodes) {
+            Path dest;
+            if (isDir) {
+                String relPath = getRelativePath(node);
+                dest = target.resolve(relPath);
+            } else {
+                dest = target;
+            }
+            Path parentDir = dest.getParent();
+            if (parentDir != null) {
+                try { Files.createDirectories(parentDir); } catch (IOException ignored) {}
+            }
             if (Files.exists(dest)) {
-                ConflictResolver.Action action = resolver.prompt(att.getFilename());
-                if (action == ConflictResolver.Action.SKIP) {
-                    skipped++;
-                    continue;
-                }
-                if (action == ConflictResolver.Action.RENAME) {
-                    dest = findUniqueName(target, att.getFilename());
-                }
+                ConflictResolver.Action action = resolver.prompt(node.getDisplayName());
+                if (action == ConflictResolver.Action.SKIP) { skipped++; continue; }
+                if (action == ConflictResolver.Action.RENAME) { dest = findUniqueName(dest.getParent(), dest.getFileName().toString()); }
             }
             try {
-                att.saveTo(dest);
-                long mtime = att.getModificationTime();
-                if (mtime > 0) {
-                    Files.setLastModifiedTime(dest, FileTime.fromMillis(mtime));
+                switch (node.getKind()) {
+                    case TAR_ENTRY:
+                        TarEntry te = node.getTarEntry();
+                        try (java.io.InputStream in = te.getInputStream()) {
+                            if (in != null) Files.copy(in, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        }
+                        if (te.getModificationTime() > 0) Files.setLastModifiedTime(dest, FileTime.fromMillis(te.getModificationTime()));
+                        break;
+                    case COMPOUND_ENTRY:
+                        CompoundMessage.Attachment ca = node.getCompoundAtt();
+                        ca.saveTo(dest);
+                        if (ca.getModificationTime() > 0) Files.setLastModifiedTime(dest, FileTime.fromMillis(ca.getModificationTime()));
+                        break;
+                    case FILE:
+                        Files.copy(node.getFile().toPath(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        break;
+                    default:
+                        continue;
                 }
                 saved++;
             } catch (IOException ex) {
@@ -632,15 +700,20 @@ public class ReceivePanel extends JPanel {
         }
         StringBuilder msg = new StringBuilder();
         if (saved > 0) msg.append(saved).append(" file(s) saved");
-        if (skipped > 0) {
-            if (msg.length() > 0) msg.append(", ");
-            msg.append(skipped).append(" skipped");
-        }
-        if (errors > 0) {
-            if (msg.length() > 0) msg.append(", ");
-            msg.append(errors).append(" error(s)");
-        }
+        if (skipped > 0) { if (msg.length() > 0) msg.append(", "); msg.append(skipped).append(" skipped"); }
+        if (errors > 0) { if (msg.length() > 0) msg.append(", "); msg.append(errors).append(" error(s)"); }
         setStatus(msg.length() > 0 ? msg.toString() : "No files saved");
+    }
+
+    private String getRelativePath(AttachmentNode node) {
+        StringBuilder sb = new StringBuilder();
+        javax.swing.tree.TreeNode[] path = node.getPath();
+        for (int i = 1; i < path.length; i++) {
+            AttachmentNode n = (AttachmentNode) path[i];
+            if (sb.length() > 0) sb.append("/");
+            sb.append(n.isDirectory() ? n.getDisplayName() : n.getDisplayName());
+        }
+        return sb.toString();
     }
 
     private Path findUniqueName(Path dir, String filename) {
@@ -660,6 +733,24 @@ public class ReceivePanel extends JPanel {
             counter++;
         } while (Files.exists(candidate));
         return candidate;
+    }
+
+    private void exportTar() {
+        if (lastTarArchive == null) return;
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Export Tar Archive");
+        fc.setSelectedFile(new File(lastTarArchive.getBaseName() + ".tar"));
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        Path target = fc.getSelectedFile().toPath();
+        if (!target.toString().endsWith(".tar")) {
+            target = target.resolveSibling(target.getFileName() + ".tar");
+        }
+        try {
+            lastTarArchive.writeTo(Files.newOutputStream(target));
+            setStatus("Exported to " + target.getFileName());
+        } catch (IOException ex) {
+            UIUtils.showError(this, "Error exporting tar:\n" + ex.getMessage(), ex);
+        }
     }
 
     private void updateShowUsedButton() {
@@ -845,17 +936,28 @@ public class ReceivePanel extends JPanel {
         encryptionMetadataArea.setText(result.getEncryptionMetadataText());
         EventQueue.invokeLater(() -> scrollToTop(encryptionMetadataArea));
 
-        // Handle compound message attachments
+        // Handle compound message / tar attachments
         lastCompound = result.getCompoundMessage();
-        attachListModel.clear();
+        lastTarArchive = result.getTarArchive();
         DecryptResult.Metadata meta = result.getMetadata();
+        attachRoot.removeAllChildren();
+        boolean hasTar = lastTarArchive != null && lastTarArchive.hasAttachments();
         boolean hasCompound = lastCompound != null && !lastCompound.getAttachments().isEmpty();
-        if (hasCompound) {
+        if (hasTar) {
+            plainTextArea.setText(result.getPlainText());
+            EventQueue.invokeLater(() -> scrollToTop(plainTextArea));
+            for (TarEntry entry : lastTarArchive.getFlatEntries()) {
+                addTarEntryToTree(entry);
+            }
+            attachTreeModel.reload();
+            exportTarButton.setEnabled(true);
+        } else if (hasCompound) {
             plainTextArea.setText(result.getPlainText());
             EventQueue.invokeLater(() -> scrollToTop(plainTextArea));
             for (CompoundMessage.Attachment att : lastCompound.getAttachments()) {
-                attachListModel.addElement(att.getFilename());
+                attachRoot.add(AttachmentNode.ofCompound(att));
             }
+            attachTreeModel.reload();
         } else if (isBinary) {
             // File mode, non-compound: prompt save immediately
             String origName = meta != null ? meta.getOriginalFileName() : null;
@@ -946,7 +1048,37 @@ public class ReceivePanel extends JPanel {
             lastCompound = new CompoundMessage("", java.util.List.of(
                     new CompoundMessage.Attachment(origName, content)));
         }
-        attachListModel.addElement(origName);
+        attachRoot.add(AttachmentNode.ofCompound(lastCompound.getAttachments().get(0)));
+        attachTreeModel.reload();
+    }
+
+    private void addTarEntryToTree(TarEntry entry) {
+        String name = entry.getName();
+        String[] parts = name.split("/");
+        AttachmentNode current = attachRoot;
+        for (int i = 0; i < parts.length - 1; i++) {
+            AttachmentNode child = findChildDir(current, parts[i]);
+            if (child == null) {
+                child = AttachmentNode.directory(parts[i]);
+                current.add(child);
+            }
+            current = child;
+        }
+        String fileName = parts[parts.length - 1];
+        if (!fileName.isEmpty()) {
+            AttachmentNode fileNode = AttachmentNode.ofTarEntry(entry);
+            current.add(fileNode);
+        }
+    }
+
+    private AttachmentNode findChildDir(AttachmentNode parent, String name) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            AttachmentNode child = (AttachmentNode) parent.getChildAt(i);
+            if (child.isDirectory() && child.getDisplayName().equals(name)) {
+                return child;
+            }
+        }
+        return null;
     }
 
     private List<PGPSecretKey> extractSecretKeys() {

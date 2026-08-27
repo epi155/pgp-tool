@@ -19,6 +19,7 @@ import org.bouncycastle.openpgp.operator.bc.BcPublicKeyDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyKeyEncryptionMethodGenerator;
 import org.bouncycastle.openpgp.operator.jcajce.*;
 
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -117,6 +118,85 @@ public class PGPEngine {
         }
     }
 
+    public void encrypt(TarArchive tarArchive, String fileName, OutputStream out,
+                         List<PGPPublicKey> encKeys, List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
+                         int symmetricAlgorithm, int compressionAlgorithm,
+                         List<Integer> hashAlgorithms, boolean armor,
+                         ProgressCallback progress) throws Exception {
+        try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
+            List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
+            for (PGPPublicKey key : encKeys) {
+                methods.add(createPublicKeyMethod(key));
+            }
+            try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
+                writeInnerLayer(encOut, tarArchive, fileName, signKeys, signPassphrases,
+                        compressionAlgorithm, hashAlgorithms, progress);
+            }
+        }
+    }
+
+    public void encryptCompress(TarArchive tarArchive, String fileName, OutputStream out,
+                                 List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
+                                 int compressionAlgorithm,
+                                 List<Integer> hashAlgorithms, boolean armor,
+                                 ProgressCallback progress) throws Exception {
+        try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
+            writeInnerLayer(armored, tarArchive, fileName, signKeys, signPassphrases,
+                    compressionAlgorithm, hashAlgorithms, progress);
+        }
+    }
+
+    public void encryptPassword(TarArchive tarArchive, String fileName, OutputStream out,
+                                  char[] password, List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
+                                  int symmetricAlgorithm, int compressionAlgorithm,
+                                  List<Integer> hashAlgorithms, boolean armor,
+                                  ProgressCallback progress) throws Exception {
+        try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
+            List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
+            methods.add(createPBEMethod(password, symmetricAlgorithm));
+            try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
+                writeInnerLayer(encOut, tarArchive, fileName, signKeys, signPassphrases,
+                        compressionAlgorithm, hashAlgorithms, progress);
+            }
+        }
+    }
+
+    public void encryptRaw(TarArchive tarArchive, OutputStream out,
+                            List<PGPPublicKey> encKeys, int symmetricAlgorithm,
+                            boolean armor,
+                            ProgressCallback progress) throws Exception {
+        try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
+            List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
+            for (PGPPublicKey key : encKeys) {
+                methods.add(createPublicKeyMethod(key));
+            }
+            try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
+                writeInnerLayerRaw(encOut, tarArchive);
+            }
+        }
+    }
+
+    public void encryptRawPassword(TarArchive tarArchive, OutputStream out,
+                                     char[] password, int symmetricAlgorithm,
+                                     boolean armor,
+                                     ProgressCallback progress) throws Exception {
+        try (OutputStream armored = armor ? new ArmoredOutputStream(out) : out) {
+            List<PGPKeyEncryptionMethodGenerator> methods = new ArrayList<>();
+            methods.add(createPBEMethod(password, symmetricAlgorithm));
+            try (OutputStream encOut = openEncrypt(symmetricAlgorithm, armored, methods)) {
+                writeInnerLayerRaw(encOut, tarArchive);
+            }
+        }
+    }
+
+    private void writeInnerLayerRaw(OutputStream out, TarArchive tarArchive) throws Exception {
+        byte[] container = TarCodec.encode(tarArchive);
+        try (OutputStream litOut = new PGPLiteralDataGenerator()
+                .open(out, PGPLiteralData.BINARY, "archive.tar", container.length, new Date())) {
+            litOut.write(container);
+        }
+    }
+
     private OutputStream openEncrypt(int symmetricAlgorithm, OutputStream out,
                                      List<PGPKeyEncryptionMethodGenerator> methods) throws Exception {
         if (CustomAlgorithms.isCustom(symmetricAlgorithm)) {
@@ -144,16 +224,30 @@ public class PGPEngine {
         return new PGPCompressedDataGenerator(compressionAlgorithm).open(out);
     }
 
-    private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
-                                  List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
-                                  int compressionAlgorithm,
-                                  List<Integer> hashAlgorithms,
-                                  ProgressCallback progress) throws Exception {
+private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
+                                   List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
+                                   int compressionAlgorithm,
+                                   List<Integer> hashAlgorithms,
+                                   ProgressCallback progress) throws Exception {
         if (compressionAlgorithm == CompressionAlgorithmTags.UNCOMPRESSED) {
             writeSignAndLiteral(out, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
         } else {
             try (OutputStream zipOut = openCompressedData(out, compressionAlgorithm)) {
                 writeSignAndLiteral(zipOut, data, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
+            }
+        }
+    }
+
+    private void writeInnerLayer(OutputStream out, TarArchive tarArchive, String fileName,
+                                   List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
+                                   int compressionAlgorithm,
+                                   List<Integer> hashAlgorithms,
+                                   ProgressCallback progress) throws Exception {
+        if (compressionAlgorithm == CompressionAlgorithmTags.UNCOMPRESSED) {
+            writeSignAndLiteralTar(out, tarArchive, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
+        } else {
+            try (OutputStream zipOut = openCompressedData(out, compressionAlgorithm)) {
+                writeSignAndLiteralTar(zipOut, tarArchive, fileName, signKeys, signPassphrases, hashAlgorithms, progress);
             }
         }
     }
@@ -323,6 +417,50 @@ public class PGPEngine {
                     }
                 }
             }
+        }
+    }
+
+    // ─── writeSignAndLiteral (TarArchive) ────────────────────────────
+
+    private void writeSignAndLiteralTar(OutputStream out, TarArchive tarArchive, String fileName,
+                                         List<PGPSecretKey> signKeys, List<char[]> signPassphrases,
+                                         List<Integer> hashAlgorithms,
+                                         ProgressCallback progress) throws Exception {
+        List<PGPSignatureGenerator> sigGens = new ArrayList<>();
+        if (signKeys != null && !signKeys.isEmpty()) {
+            for (int i = 0; i < signKeys.size(); i++) {
+                char[] passphrase = signPassphrases != null && i < signPassphrases.size()
+                        ? signPassphrases.get(i) : null;
+                PGPPrivateKey signPrivateKey = extractPrivateKey(signKeys.get(i), passphrase);
+                if (passphrase != null) {
+                    cachePassphrase(signKeys.get(i).getKeyID(), passphrase);
+                }
+                PGPPublicKey signPubKey = signKeys.get(i).getPublicKey();
+                int userHash = (hashAlgorithms != null && i < hashAlgorithms.size())
+                        ? hashAlgorithms.get(i) : HashAlgorithmTags.SHA256;
+                int effectiveHash = defaultHashForAlgo(signPubKey.getAlgorithm(), userHash);
+                PGPContentSignerBuilder csBuilder;
+                if (signPubKey.getAlgorithm() == PublicKeyAlgorithmTags.Ed448) {
+                    csBuilder = new Ed448PGPContentSignerBuilder(effectiveHash);
+                } else {
+                    csBuilder = new JcaPGPContentSignerBuilder(signPubKey.getAlgorithm(), effectiveHash)
+                            .setProvider("BC");
+                }
+                PGPSignatureGenerator sigGen = new PGPSignatureGenerator(csBuilder);
+                sigGen.init(PGPSignature.BINARY_DOCUMENT, extractPrivateKey(signKeys.get(i),
+                        signPassphrases != null && i < signPassphrases.size() ? signPassphrases.get(i) : null));
+                sigGen.generateOnePassVersion(false).encode(out);
+                sigGens.add(sigGen);
+            }
+        }
+
+        PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
+        byte[] container = TarCodec.encode(tarArchive);
+        try (OutputStream litOut = litGen.open(out, PGPLiteralData.BINARY, fileName, container.length, new Date())) {
+            litOut.write(container);
+        }
+        for (PGPSignatureGenerator sigGen : sigGens) {
+            sigGen.generate().encode(out);
         }
     }
 

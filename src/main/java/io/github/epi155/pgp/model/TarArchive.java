@@ -6,12 +6,14 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.*;
 import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 
 public class TarArchive {
@@ -175,9 +177,14 @@ public class TarArchive {
     }
 
     private void writeEntry(TarEntry entry, TarArchiveOutputStream tarOut) throws IOException {
-        if (!entry.isDirectory() || entry != root) {
+        if (entry != root) {
             tarOut.putArchiveEntry(entry.getEntry());
-            if (!entry.isDirectory()) {
+            if (entry.isSymbolicLink()) {
+                String linkTarget = entry.getLinkName();
+                if (linkTarget != null) {
+                    tarOut.write(linkTarget.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+            } else if (!entry.isDirectory()) {
                 try (InputStream in = entry.getInputStream()) {
                     if (in != null) {
                         byte[] buf = new byte[8192];
@@ -187,12 +194,12 @@ public class TarArchive {
                         }
                     }
                 }
+            }
             tarOut.closeArchiveEntry();
         }
         for (TarEntry child : entry.getChildren()) {
             writeEntry(child, tarOut);
         }
-    }
     }
 
     public void writeTo(OutputStream out, Consumer<Long> progressCallback) throws IOException {
@@ -221,17 +228,46 @@ public class TarArchive {
     public void extractTo(Path targetDir) throws IOException {
         Files.createDirectories(targetDir);
         for (TarEntry entry : getFlatEntries()) {
-            Path target = targetDir.resolve(entry.getName());
+            String name = entry.getName();
+            if (name == null || name.isEmpty() || ".".equals(name) || "..".equals(name)) continue;
+            Path target = targetDir.resolve(name).normalize();
+            if (!target.startsWith(targetDir)) continue;
             Files.createDirectories(target.getParent());
-            try (InputStream in = entry.getInputStream()) {
-                if (in != null) {
-                    Files.copy(in, target);
+            if (entry.isSymbolicLink() && entry.getLinkName() != null) {
+                Files.deleteIfExists(target);
+                Files.createSymbolicLink(target, Path.of(entry.getLinkName()));
+            } else {
+                try (InputStream in = entry.getInputStream()) {
+                    if (in != null) {
+                        Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+                if (entry.getModificationTime() > 0) {
+                    Files.setLastModifiedTime(target, FileTime.fromMillis(entry.getModificationTime()));
+                }
+                int mode = entry.getMode();
+                if (mode != 0 && target.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+                    try {
+                        Set<PosixFilePermission> perms = modeToPermissions(mode);
+                        Files.setPosixFilePermissions(target, perms);
+                    } catch (Exception ignored) {}
                 }
             }
-            if (entry.getModificationTime() > 0) {
-                Files.setLastModifiedTime(targetDir.resolve(entry.getName()), FileTime.fromMillis(entry.getModificationTime()));
-            }
         }
+    }
+
+    private static Set<PosixFilePermission> modeToPermissions(int mode) {
+        Set<PosixFilePermission> perms = new HashSet<>();
+        if ((mode & 0400) != 0) perms.add(PosixFilePermission.OWNER_READ);
+        if ((mode & 0200) != 0) perms.add(PosixFilePermission.OWNER_WRITE);
+        if ((mode & 0100) != 0) perms.add(PosixFilePermission.OWNER_EXECUTE);
+        if ((mode & 0040) != 0) perms.add(PosixFilePermission.GROUP_READ);
+        if ((mode & 0020) != 0) perms.add(PosixFilePermission.GROUP_WRITE);
+        if ((mode & 0010) != 0) perms.add(PosixFilePermission.GROUP_EXECUTE);
+        if ((mode & 0004) != 0) perms.add(PosixFilePermission.OTHERS_READ);
+        if ((mode & 0002) != 0) perms.add(PosixFilePermission.OTHERS_WRITE);
+        if ((mode & 0001) != 0) perms.add(PosixFilePermission.OTHERS_EXECUTE);
+        return perms;
     }
 
     public int getEntryCount() {

@@ -3,8 +3,8 @@
 ## Build & run
 
 - **Compile**: `mvn compile`
-- **Package fat JAR**: `mvn package` → `target/pgp-tool-1.0.0-SNAPSHOT.jar` (shaded)
-- **Run**: `java -jar target/pgp-tool-1.0.0-SNAPSHOT.jar [flags]` or `mvn exec:java`
+- **Package fat JAR**: `mvn package` → `target/pgp-tool-1.0.1-SNAPSHOT.jar` (shaded)
+- **Run**: `java -jar target/pgp-tool-1.0.1-SNAPSHOT.jar [flags]` or `mvn exec:java`
 - **No tests** — no test framework, no test files.
 
 ## Release (GitHub Actions)
@@ -43,7 +43,7 @@ If `args[0]` is a command, `PGPTool.main()` dispatches to `Cli.run()` and exits 
 |---------|---------|
 | `-l` / `--list <keyring.asc>...` | List master keys + subkeys with `[C]`/`[S]`/`[E]`/`[A]` capability (certify/sign/encrypt/authenticate) |
 | `-g` / `--generate ...` | Generate a key pair (armored `<name>-public.asc` / `<name>-secret.asc`) |
-| `-e` / `--encrypt [file]` | Encrypt to KEY/PASS layers, sign, optional compound attachments |
+| `-e` / `--encrypt [file]` | Encrypt to KEY/PASS layers, sign, optional attachments (directories/symlinks via tar) |
 | `-d` / `--decrypt [file]` | Decrypt nested messages, save attachments, verify signatures |
 
 **Ed448/X448 key generation is gated behind a dedicated `--curve448` flag** (GUI `KeyTabPanel`
@@ -71,7 +71,7 @@ Default compression is ZLIB (same as the GUI and gpg).
 
 ## Key architecture facts
 
-- **Java 11**, Swing GUI, **Bouncy Castle 1.84** (`bcprov-jdk18on`, `bcpg-jdk18on`)
+- **Java 11**, Swing GUI, **Bouncy Castle 1.84** (`bcprov-jdk18on`, `bcpg-jdk18on`), **commons-compress 1.26.0**, **commons-codec 1.17.1**
 - Packages: `model/` (data classes), `service/` (PGP logic), `ui/` (Swing), `cli/` (headless batch commands)
 - Entry: `io.github.epi155.pgp.PGPTool`
 - `PGPEngine` is the core — all encrypt/decrypt/sign/verify logic, ~770 lines, stateful (passphrase cache, providers)
@@ -176,11 +176,50 @@ Wire format per chunk (64 KiB, encoded size 10) — `AeadEncryptingStream`/`Aead
 - If the typed name has no extension and the encrypted filter is selected, the chosen extension is auto-appended:
   `asc` when `armorCheckBox` is checked (default), else `gpg`.
 
-## Compound message format
+## Compound message format (legacy, read-only)
 
 - Custom format with magic bytes `PGPC` (checked in `CompoundCodec.isCompound()`)
 - Stream format: text part + N binary attachment parts, each length-prefixed
-- UI supports drag-and-drop attachments and save-to-disk after decryption
+- Only used for backward-compatible reading of old v1/v2 messages; new encrypt always produces tar v3
+
+## Tar archive format (v3)
+
+New encryption produces PAX tar archives (`LONGFILE_POSIX`) with full metadata preservation:
+
+- **TarEntry**: wraps `TarArchiveEntry` with POSIX permissions, symlink support, and mode tracking.
+  `TarEntry.fromPath()` reads `PosixFileAttributes` for permissions and uses `Files.isSymbolicLink()`
+  for symlink detection. The `linkFlag` is set via reflection because `TarArchiveEntry.setMode(int)`
+  does not update the internal `linkFlag` field.
+- **TarArchive**: hierarchical model (root entry + children). `writeTo()` streams via
+  `TarArchiveOutputStream` with `LONGFILE_POSIX` format. `extractTo(Path)` recreates the tree
+  including symlinks (via `Files.createSymbolicLink`) and POSIX permissions (via
+  `Files.setPosixFilePermissions`). `getFlatEntries()` returns all entries in tree order.
+- **TarCodec**: encode/decode between `TarArchive` and byte stream. `encode(TarArchive, OutputStream)`
+  uses a temp file for streaming (reduces peak memory). `decode()` handles v3 tar format and falls
+  back to v1/v2 `CompoundCodec` for backward compatibility.
+- **PGPEngine**: `writeSignAndLiteralTar()` encodes the tar to bytes and writes a signed+literal
+  data packet. Single attachment without directories produces a gpg-compatible literal data packet;
+  multiple attachments or directories produce tar v3.
+
+### Symlink handling
+
+- Symlinks are detected via `Files.isSymbolicLink()` during `TarEntry.fromPath()`
+- `linkFlag` set to `0x32` (`LF_SYMLINK`) via reflection (`TarEntry.setLinkFlag()`)
+- Mode set to `0120777` (symlink); `isSymbolicLink()` checks `(mode & 0170000) == 0120000`
+- `TarArchive.extractTo()` creates symlinks via `Files.createSymbolicLink(target, Path.of(linkName))`
+- `setLastModifiedTime()` is skipped for symlinks (it follows symlinks and fails if the target
+  doesn't exist yet during flat-order extraction)
+
+### Known quirks
+
+- **commons-compress 1.26**: `TarArchiveEntry.setMode(int)` does NOT update the internal `linkFlag`
+  field — use reflection to set it for symlinks
+- **commons-compress 1.26**: `TarArchiveEntry(File, String)` constructor does NOT read POSIX permissions
+  from the filesystem — always returns default 0100644; must use `PosixFileAttributes` explicitly
+- **Permission fix**: `setLastModifiedTime` follows symlinks; if the symlink target doesn't exist yet
+  (flat extraction order), it throws `NoSuchFileException` — must skip mtime set for symlinks
+- `TarCodec.encode(TarArchive)` (byte[] overload) still buffers in memory; the streaming overload
+  `encode(TarArchive, OutputStream)` uses a temp file
 
 ## Common pitfalls
 

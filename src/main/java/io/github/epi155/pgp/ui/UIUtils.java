@@ -91,4 +91,10 @@ public final class UIUtils {
         }
     }
 
+    public static void expandAll(JTree tree) {
+        for (int i = 0; i < tree.getRowCount(); i++) {
+            tree.expandRow(i);
+        }
+    }
+
 }

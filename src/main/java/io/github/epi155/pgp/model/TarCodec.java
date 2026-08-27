@@ -35,26 +35,41 @@ public class TarCodec {
         dataOut.write(MAGIC);
         dataOut.writeByte(VERSION);
 
-        // Write plain text part if present
+        int numParts = 1;
+        if (archive.hasAttachments()) numParts++;
+        dataOut.writeInt(numParts);
+
         String plainText = archive.getPlainText();
         byte[] textBytes = plainText != null ? plainText.getBytes(StandardCharsets.UTF_8) : new byte[0];
-        dataOut.writeByte(0); // TYPE_TEXT
-        dataOut.writeInt(0); // no filename for text part
+        dataOut.writeByte(0);
+        dataOut.writeInt(0);
         dataOut.writeLong(textBytes.length);
         dataOut.write(textBytes);
 
-        // Write tar archive as single binary part
         if (archive.hasAttachments()) {
-            ByteArrayOutputStream tarBuf = new ByteArrayOutputStream();
-            archive.writeTo(tarBuf);
-            byte[] tarBytes = tarBuf.toByteArray();
+            Path tempFile = Files.createTempFile("tar-", ".tar");
+            try {
+                long tarSize;
+                try (OutputStream tarOut = Files.newOutputStream(tempFile)) {
+                    archive.writeTo(tarOut);
+                }
+                tarSize = Files.size(tempFile);
 
-            byte[] nameBytes = archive.getTarFileName().getBytes(StandardCharsets.UTF_8);
-            dataOut.writeByte(1); // TYPE_BINARY
-            dataOut.writeInt(nameBytes.length);
-            dataOut.write(nameBytes);
-            dataOut.writeLong(tarBytes.length);
-            dataOut.write(tarBytes);
+                byte[] nameBytes = archive.getTarFileName().getBytes(StandardCharsets.UTF_8);
+                dataOut.writeByte(1);
+                dataOut.writeInt(nameBytes.length);
+                dataOut.write(nameBytes);
+                dataOut.writeLong(tarSize);
+                byte[] buf = new byte[8192];
+                try (InputStream tarIn = Files.newInputStream(tempFile)) {
+                    int n;
+                    while ((n = tarIn.read(buf)) >= 0) {
+                        dataOut.write(buf, 0, n);
+                    }
+                }
+            } finally {
+                Files.deleteIfExists(tempFile);
+            }
         }
 
         dataOut.flush();
@@ -167,21 +182,36 @@ public class TarCodec {
             TarArchiveEntry entry;
             while ((entry = tarIn.getNextTarEntry()) != null) {
                 if (entry.isDirectory()) {
-                    // Directories are created implicitly by file entries
                     continue;
                 }
-                TarEntry tarEntry = new TarEntry(entry);
-                // Read content if not too large, otherwise leave as stream
                 long size = entry.getSize();
-                if (size <= 50_000_000) { // 50MB threshold
+                if (entry.isSymbolicLink()) {
+                    byte[] content = new byte[(int) size];
+                    tarIn.read(content);
+                    String linkTarget = new String(content, StandardCharsets.UTF_8);
+                    TarEntry tarEntry = new TarEntry(entry);
+                    tarEntry.setLinkName(linkTarget);
+                    tarEntry.setSize(linkTarget.length());
+                    archive.addEntry(tarEntry);
+                } else if (size <= 50_000_000) {
                     byte[] content = new byte[(int) size];
                     int read = tarIn.read(content);
                     if (read != size) {
                         throw new IOException("Incomplete read for entry: " + entry.getName());
                     }
-                    tarEntry = new TarEntry(entry.getName(), content, entry.getModTime().getTime());
+                    TarEntry tarEntry = new TarEntry(entry.getName(), content, entry.getModTime().getTime());
+                    tarEntry.setMode(entry.getMode());
+                    if (entry.getLinkName() != null && !entry.getLinkName().isEmpty()) {
+                        tarEntry.setLinkName(entry.getLinkName());
+                    }
+                    archive.addEntry(tarEntry);
+                } else {
+                    TarEntry tarEntry = new TarEntry(entry);
+                    if (entry.getLinkName() != null && !entry.getLinkName().isEmpty()) {
+                        tarEntry.setLinkName(entry.getLinkName());
+                    }
+                    archive.addEntry(tarEntry);
                 }
-                archive.addEntry(tarEntry);
             }
         }
         return archive;

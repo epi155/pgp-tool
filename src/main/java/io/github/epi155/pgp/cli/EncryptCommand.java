@@ -3,6 +3,8 @@ package io.github.epi155.pgp.cli;
 import io.github.epi155.pgp.model.CompoundCodec;
 import io.github.epi155.pgp.model.CompoundMessage;
 import io.github.epi155.pgp.model.PGPKeyInfo;
+import io.github.epi155.pgp.model.TarArchive;
+import io.github.epi155.pgp.model.TarEntry;
 import io.github.epi155.pgp.service.PGPEngine;
 import io.github.epi155.pgp.service.PassphraseRequiredException;
 import org.bouncycastle.bcpg.CompressionAlgorithmTags;
@@ -11,8 +13,8 @@ import org.bouncycastle.openpgp.PGPSecretKey;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.*;
+import java.nio.file.attribute.FileTime;
 import java.util.*;
 
 public final class EncryptCommand {
@@ -120,27 +122,64 @@ public final class EncryptCommand {
         if (input == null) input = "-";
         if (output == null) output = "-";
 
-        byte[] data = Io.readAll(input);
+        byte[] data = null;
+        TarArchive tarData = null;
         String fileName;
         if (!attachFiles.isEmpty()) {
-            String text = new String(data, StandardCharsets.UTF_8);
+            byte[] stdinData = Io.readAll(input);
+            String text = new String(stdinData, StandardCharsets.UTF_8);
             if (text.isEmpty() && attachFiles.size() == 1) {
-                fileName = Path.of(attachFiles.get(0)).getFileName().toString();
-                data = Io.readAll(attachFiles.get(0));
+                Path single = Path.of(attachFiles.get(0));
+                if (Files.isRegularFile(single)) {
+                    fileName = single.getFileName().toString();
+                    data = Io.readAll(attachFiles.get(0));
+                } else if (Files.isDirectory(single)) {
+                    tarData = new TarArchive(single.getFileName().toString());
+                    try (var walk = Files.walk(single)) {
+                        for (Path entry : (Iterable<Path>) walk::iterator) {
+                            if (Files.isRegularFile(entry) || Files.isSymbolicLink(entry)) {
+                                String rel = single.relativize(entry).toString();
+                                TarEntry te = TarEntry.fromPath(entry, rel);
+                                te.setModificationTime(Files.getLastModifiedTime(entry).toMillis());
+                                tarData.addEntry(te);
+                            }
+                        }
+                    }
+                    fileName = "_CONSOLE";
+                } else {
+                    throw new CliException(attachFiles.get(0) + ": no such file", true);
+                }
             } else {
-                List<CompoundMessage.Attachment> attachments = new ArrayList<>();
+                tarData = new TarArchive("_CONSOLE");
+                if (!text.isEmpty()) {
+                    tarData.setPlainText(text);
+                }
                 for (String f : attachFiles) {
                     Path p = Path.of(f);
-                    if (!Files.isRegularFile(p)) {
+                    if (Files.isDirectory(p)) {
+                        Path base = p.getFileName();
+                        try (var walk = Files.walk(p)) {
+                            for (Path entry : (Iterable<Path>) walk::iterator) {
+                                if (Files.isRegularFile(entry) || Files.isSymbolicLink(entry)) {
+                                    String rel = base.resolve(p.relativize(entry)).toString();
+                                    TarEntry te = TarEntry.fromPath(entry, rel);
+                                    te.setModificationTime(Files.getLastModifiedTime(entry).toMillis());
+                                    tarData.addEntry(te);
+                                }
+                            }
+                        }
+                    } else if (Files.isRegularFile(p)) {
+                        TarEntry te = TarEntry.fromPath(p, p.getFileName().toString());
+                        te.setModificationTime(Files.getLastModifiedTime(p).toMillis());
+                        tarData.addEntry(te);
+                    } else {
                         throw new CliException(f + ": no such file", true);
                     }
-                    attachments.add(new CompoundMessage.Attachment(
-                            p.getFileName().toString(), Files.readAllBytes(p)));
                 }
                 fileName = "_CONSOLE";
-                data = CompoundCodec.encode(new CompoundMessage(text, attachments));
             }
         } else {
+            data = Io.readAll(input);
             fileName = "-".equals(input) ? "_CONSOLE" : Path.of(input).getFileName().toString();
         }
 
@@ -198,23 +237,38 @@ public final class EncryptCommand {
             PGPEngine engine = new PGPEngine();
             if (layers.isEmpty()) {
                 ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-                engine.encryptCompress(data, fileName, bOut,
-                        signKeys, signPassphrases, compress, hashAlgos, armor, null);
+                if (tarData != null) {
+                    engine.encryptCompress(tarData, fileName, bOut,
+                            signKeys, signPassphrases, compress, hashAlgos, armor, null);
+                } else {
+                    engine.encryptCompress(data, fileName, bOut,
+                            signKeys, signPassphrases, compress, hashAlgos, armor, null);
+                }
                 result = bOut.toByteArray();
             } else {
-                byte[] enc = data;
+                byte[] enc = null;
                 for (int i = 0; i < layers.size(); i++) {
                     Layer layer = layers.get(i);
                     boolean last = (i == layers.size() - 1);
                     boolean arm = last && armor;
                     ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-                    if (i == 0) {
+                    if (enc == null) {
                         if (layer.isPass) {
-                            engine.encryptPassword(enc, fileName, bOut, layer.password,
-                                    signKeys, signPassphrases, layer.symAlgo, compress, hashAlgos, arm, null);
+                            if (tarData != null) {
+                                engine.encryptPassword(tarData, fileName, bOut, layer.password,
+                                        signKeys, signPassphrases, layer.symAlgo, compress, hashAlgos, arm, null);
+                            } else {
+                                engine.encryptPassword(data, fileName, bOut, layer.password,
+                                        signKeys, signPassphrases, layer.symAlgo, compress, hashAlgos, arm, null);
+                            }
                         } else {
-                            engine.encrypt(enc, fileName, bOut, layer.encKeys,
-                                    signKeys, signPassphrases, layer.symAlgo, compress, hashAlgos, arm, null);
+                            if (tarData != null) {
+                                engine.encrypt(tarData, fileName, bOut, layer.encKeys,
+                                        signKeys, signPassphrases, layer.symAlgo, compress, hashAlgos, arm, null);
+                            } else {
+                                engine.encrypt(data, fileName, bOut, layer.encKeys,
+                                        signKeys, signPassphrases, layer.symAlgo, compress, hashAlgos, arm, null);
+                            }
                         }
                     } else {
                         if (layer.isPass) {

@@ -165,9 +165,26 @@ public final class DecryptCommand {
                 if (verif != null && !verif.isEmpty()) System.err.println(verif);
             }
 
-            boolean hasAttachments = result.getCompoundMessage() != null
+            boolean hasCompoundAttachments = result.getCompoundMessage() != null
                     && result.getCompoundMessage().hasAttachments();
-            if (hasAttachments) {
+            boolean hasTarAttachments = result.getTarArchive() != null
+                    && result.getTarArchive().hasAttachments();
+            if (hasTarAttachments) {
+                if (outputDir == null) {
+                    throw new CliException("Message contains attachments: use --output-dir <dir> to save them", true);
+                }
+                Path dir = Path.of(outputDir);
+                result.getTarArchive().extractTo(dir);
+                if (!quiet) {
+                    for (io.github.epi155.pgp.model.TarEntry te : result.getTarArchive().getFlatEntries()) {
+                        System.err.println("Attachment: " + dir.resolve(te.getName()));
+                    }
+                }
+                String pt = result.getTarArchive().getPlainText();
+                if (pt != null && !pt.isEmpty()) {
+                    writeText(pt, output, force);
+                }
+            } else if (hasCompoundAttachments) {
                 if (outputDir == null) {
                     throw new CliException("Message contains attachments: use --output-dir <dir> to save them", true);
                 }
