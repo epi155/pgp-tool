@@ -11,6 +11,7 @@ public final class AppLog {
     private static final Logger LOGGER = Logger.getLogger(LOGGER_NAME);
 
     private static volatile boolean initialized;
+    private static volatile boolean guiDisabled;
 
     private AppLog() {
     }
@@ -32,6 +33,10 @@ public final class AppLog {
         }
     }
 
+    public static void setGuiDisabled(boolean disabled) {
+        guiDisabled = disabled;
+    }
+
     public static void error(String context, Throwable t) {
         if (t == null) {
             LOGGER.severe(context);
@@ -48,7 +53,7 @@ public final class AppLog {
     }
 
     private static void showUnexpectedError(Throwable throwable) {
-        if (GraphicsEnvironment.isHeadless()) return;
+        if (GraphicsEnvironment.isHeadless() || guiDisabled) return;
         try {
             String message = throwable.getMessage() != null ? throwable.getMessage() : throwable.getClass().getSimpleName();
             SwingUtilities.invokeLater(() ->

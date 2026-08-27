@@ -32,7 +32,12 @@ public class PGPTool {
         String[] rest = filtered.toArray(new String[0]);
 
         if (rest.length > 0 && Cli.isCommand(rest[0])) {
-            System.exit(runCli(rest, privateExtensions, curve448));
+            AppLog.setGuiDisabled(true);
+            try {
+                System.exit(runCli(rest, privateExtensions, curve448));
+            } finally {
+                AppLog.setGuiDisabled(false);
+            }
             return;
         }
         boolean showKeyTab = false;

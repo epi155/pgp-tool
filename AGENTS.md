@@ -33,6 +33,8 @@ Full details in `RELEASE.md`. The pom must keep a **3-component** version (`1.0.
 | `-h` / `--help` | Print usage |
 
 GUI flags are parsed in `PGPTool.main()`. `BouncyCastleProvider` is registered for **both** GUI and CLI paths.
+`AppLog.setGuiDisabled(true)` is called before CLI dispatch to prevent uncaught-exception handler from
+showing `JOptionPane` popups in batch mode.
 
 ### Batch commands (headless, in `cli/` package)
 
