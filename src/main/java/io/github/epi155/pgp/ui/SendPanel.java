@@ -16,6 +16,7 @@ import org.bouncycastle.openpgp.PGPSecretKey;
 import javax.swing.*;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
+import java.nio.file.Path;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -542,7 +543,14 @@ public class SendPanel extends JPanel {
     }
 
     private void addFileToTree(File file, AttachmentNode targetNode) {
-        String pathStr = file.toPath().toString().replace("\\", "/");
+        Path absPath = file.toPath().toAbsolutePath().normalize();
+        Path cwd = Path.of("").toAbsolutePath().normalize();
+        String pathStr;
+        try {
+            pathStr = cwd.relativize(absPath).toString().replace("\\", "/");
+        } catch (IllegalArgumentException e) {
+            pathStr = absPath.toString().replace("\\", "/");
+        }
         String[] parts = pathStr.split("/");
         AttachmentNode current = targetNode;
         for (int i = 0; i < parts.length - 1; i++) {
