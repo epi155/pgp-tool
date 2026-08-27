@@ -47,6 +47,7 @@ public class ReceivePanel extends JPanel {
     private final JList<String> attachList;
     private final DefaultListModel<String> attachListModel;
     private final JButton saveAttachButton;
+    private final JLabel statusLabel;
 
     private transient KeyBundle publicKeyBundle;
     private transient KeyBundle privateKeyBundle;
@@ -255,8 +256,21 @@ public class ReceivePanel extends JPanel {
 
         cipherFilePanel.add(fileRow, BorderLayout.NORTH);
         cipherFilePanel.add(attachScroll, BorderLayout.CENTER);
-        JPanel fileSouth = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
-        fileSouth.add(saveAttachButton);
+        JPanel fileSouth = new JPanel(new BorderLayout(5, 2));
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
+        btnRow.add(saveAttachButton);
+        fileSouth.add(btnRow, BorderLayout.WEST);
+        statusLabel = new JLabel(" ");
+        statusLabel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
+        statusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        statusLabel.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                statusLabel.setText(" ");
+            }
+        });
+        fileSouth.add(statusLabel, BorderLayout.CENTER);
+        fileSouth.add(new JLabel(" "), BorderLayout.EAST); // spacer
         cipherFilePanel.add(fileSouth, BorderLayout.SOUTH);
         inputCardPanel.add(cipherFilePanel, "file");
 
@@ -589,13 +603,17 @@ public class ReceivePanel extends JPanel {
     private void saveAttachmentsTo(int[] indices, Path target, boolean isDir) {
         Frame frame = (Frame) SwingUtilities.getWindowAncestor(this);
         ConflictResolver resolver = new ConflictResolver(frame);
+        int saved = 0, skipped = 0, errors = 0;
         for (int idx : indices) {
             CompoundMessage.Attachment att = lastCompound.getAttachments().get(idx);
             Path dest = isDir ? target.resolve(att.getFilename()) : target;
 
             if (Files.exists(dest)) {
                 ConflictResolver.Action action = resolver.prompt(att.getFilename());
-                if (action == ConflictResolver.Action.SKIP) continue;
+                if (action == ConflictResolver.Action.SKIP) {
+                    skipped++;
+                    continue;
+                }
                 if (action == ConflictResolver.Action.RENAME) {
                     dest = findUniqueName(target, att.getFilename());
                 }
@@ -606,10 +624,23 @@ public class ReceivePanel extends JPanel {
                 if (mtime > 0) {
                     Files.setLastModifiedTime(dest, FileTime.fromMillis(mtime));
                 }
+                saved++;
             } catch (IOException ex) {
+                errors++;
                 UIUtils.showError(this, "Error saving attachment:\n" + ex.getMessage(), ex);
             }
         }
+        StringBuilder msg = new StringBuilder();
+        if (saved > 0) msg.append(saved).append(" file(s) saved");
+        if (skipped > 0) {
+            if (msg.length() > 0) msg.append(", ");
+            msg.append(skipped).append(" skipped");
+        }
+        if (errors > 0) {
+            if (msg.length() > 0) msg.append(", ");
+            msg.append(errors).append(" error(s)");
+        }
+        setStatus(msg.length() > 0 ? msg.toString() : "No files saved");
     }
 
     private Path findUniqueName(Path dir, String filename) {
@@ -1017,31 +1048,35 @@ public class ReceivePanel extends JPanel {
         tempFiles.clear();
     }
 
+    private void setStatus(String msg) {
+        statusLabel.setText(msg);
+    }
+
     private static class ConflictResolver {
         private final Frame owner;
-        private Action lastAction = Action.NO;
+        private Action lastAction = Action.SKIP;
         private boolean applyToAll = false;
 
         ConflictResolver(Frame owner) {
             this.owner = owner;
         }
 
-        enum Action { YES, NO, ALL_YES, ALL_NO, SKIP, RENAME }
+        enum Action { OVERWRITE, SKIP, RENAME }
 
         Action prompt(String filename) {
             if (applyToAll) {
-                return lastAction == Action.ALL_YES ? Action.YES : Action.SKIP;
+                return lastAction;
             }
 
             JPanel panel = new JPanel(new BorderLayout(10, 10));
             panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-            panel.add(new JLabel("<html>File <b>" + escapeHtml(filename) + "</b> already exists.<br>What do you want to do?</html>"), BorderLayout.CENTER);
+            panel.add(new JLabel("<html>File <b>" + escapeHtml(filename) + "</b> already exists.<br>Overwrite?</html>"), BorderLayout.CENTER);
 
             JCheckBox applyAll = new JCheckBox("Apply to all");
             panel.add(applyAll, BorderLayout.SOUTH);
 
             Object[] options = {
-                "Yes", "No", "All", "None", "Rename"
+                "Overwrite", "Skip", "Rename"
             };
             int result = JOptionPane.showOptionDialog(
                 owner, panel, "File Exists",
@@ -1051,11 +1086,9 @@ public class ReceivePanel extends JPanel {
 
             Action action;
             switch (result) {
-                case 0: action = Action.YES; break;
-                case 1: action = Action.NO; break;
-                case 2: action = Action.ALL_YES; break;
-                case 3: action = Action.ALL_NO; break;
-                case 4: action = Action.RENAME; break;
+                case 0: action = Action.OVERWRITE; break;
+                case 1: action = Action.SKIP; break;
+                case 2: action = Action.RENAME; break;
                 default: action = Action.SKIP;
             }
 
