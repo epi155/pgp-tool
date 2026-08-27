@@ -59,6 +59,11 @@
             <artifactId>xz</artifactId>
             <version>1.12</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.26.0</version>
+        </dependency>
     </dependencies>
 
     <build>

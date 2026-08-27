@@ -99,23 +99,43 @@ public class DecryptResult {
     private final List<SignerInfo> signers;
     private final Metadata metadata;
     private final CompoundMessage compoundMessage;
+    private final TarArchive tarArchive;
     private final java.nio.file.Path tempFilePath;
 
     public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
                          List<SignerInfo> signers,
                          Metadata metadata, CompoundMessage compoundMessage) {
-        this(plainText, rawContent, verificationStatus, signers, metadata, compoundMessage, null);
+        this(plainText, rawContent, verificationStatus, signers, metadata, compoundMessage, null, null);
     }
 
     public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
                          List<SignerInfo> signers,
                          Metadata metadata, CompoundMessage compoundMessage, java.nio.file.Path tempFilePath) {
+        this(plainText, rawContent, verificationStatus, signers, metadata, compoundMessage, null, tempFilePath);
+    }
+
+    public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
+                         List<SignerInfo> signers,
+                         Metadata metadata, TarArchive tarArchive) {
+        this(plainText, rawContent, verificationStatus, signers, metadata, null, tarArchive, null);
+    }
+
+    public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
+                         List<SignerInfo> signers,
+                         Metadata metadata, TarArchive tarArchive, java.nio.file.Path tempFilePath) {
+        this(plainText, rawContent, verificationStatus, signers, metadata, null, tarArchive, tempFilePath);
+    }
+
+    public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
+                         List<SignerInfo> signers,
+                         Metadata metadata, CompoundMessage compoundMessage, TarArchive tarArchive, java.nio.file.Path tempFilePath) {
         this.plainText = plainText;
         this.rawContent = rawContent;
         this.verificationStatus = verificationStatus;
         this.signers = signers != null ? signers : List.of();
         this.metadata = metadata;
         this.compoundMessage = compoundMessage;
+        this.tarArchive = tarArchive;
         this.tempFilePath = tempFilePath;
     }
 
@@ -129,6 +149,13 @@ public class DecryptResult {
     public List<SignerInfo> getSigners() { return signers; }
     public Metadata getMetadata() { return metadata; }
     public CompoundMessage getCompoundMessage() { return compoundMessage; }
+    public TarArchive getTarArchive() { return tarArchive; }
+
+    @Deprecated
+    public boolean hasAttachments() {
+        return (compoundMessage != null && compoundMessage.hasAttachments())
+                || (tarArchive != null && tarArchive.hasAttachments());
+    }
 
     private byte[] readTempContent() {
         if (tempFilePath != null) {

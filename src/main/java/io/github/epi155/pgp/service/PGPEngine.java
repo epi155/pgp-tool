@@ -3,6 +3,9 @@ package io.github.epi155.pgp.service;
 import io.github.epi155.pgp.model.CompoundCodec;
 import io.github.epi155.pgp.model.CompoundMessage;
 import io.github.epi155.pgp.model.DecryptResult;
+import io.github.epi155.pgp.model.TarArchive;
+import io.github.epi155.pgp.model.TarCodec;
+import io.github.epi155.pgp.model.DecryptResult;
 import org.bouncycastle.bcpg.*;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
@@ -680,14 +683,21 @@ public class PGPEngine {
                         sigTime));
             }
 
+            TarArchive tarArchive = null;
             CompoundMessage compound = null;
             String plainText;
             if (totalWritten > 0) {
-                if (rawData != null && rawData.length >= 4 && CompoundCodec.isCompound(rawData)) {
+                if (rawData != null && rawData.length >= 4 && (CompoundCodec.isCompound(rawData) || TarCodec.isCompound(rawData))) {
                     try (InputStream decodeIn = Files.newInputStream(tempFile)) {
-                        compound = CompoundCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                        if (TarCodec.isCompound(rawData)) {
+                            TarArchive tar = TarCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                            tarArchive = tar;
+                            plainText = tar.getPlainText();
+                        } else {
+                            compound = CompoundCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                            plainText = compound.getPlainText();
+                        }
                     }
-                    plainText = compound.getPlainText();
                 } else if (rawData != null && decodeText) {
                     plainText = new String(rawData, StandardCharsets.UTF_8);
                 } else {
@@ -711,8 +721,13 @@ public class PGPEngine {
                     metaBuilder.signerUserId(signers.get(0).getUserId());
             }
 
-            return new DecryptResult(plainText, rawData, overallStatus, signers,
-                    metaBuilder.build(), compound, tempFile);
+            if (tarArchive != null) {
+                return new DecryptResult(plainText, rawData, overallStatus, signers,
+                        metaBuilder.build(), tarArchive, tempFile);
+            } else {
+                return new DecryptResult(plainText, rawData, overallStatus, signers,
+                        metaBuilder.build(), compound, tempFile);
+            }
         }
 
         if (message instanceof PGPLiteralData) {
@@ -735,14 +750,21 @@ public class PGPEngine {
             byte[] rawData = totalWritten <= 50_000_000
                     ? Files.readAllBytes(tempFile) : null;
 
+TarArchive tarArchive = null;
             CompoundMessage compound = null;
             String plainText;
             if (totalWritten > 0) {
-                if (rawData != null && rawData.length >= 4 && CompoundCodec.isCompound(rawData)) {
+                if (rawData != null && rawData.length >= 4 && (CompoundCodec.isCompound(rawData) || TarCodec.isCompound(rawData))) {
                     try (InputStream decodeIn = Files.newInputStream(tempFile)) {
-                        compound = CompoundCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                        if (TarCodec.isCompound(rawData)) {
+                            TarArchive tar = TarCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                            tarArchive = tar;
+                            plainText = tar.getPlainText();
+                        } else {
+                            compound = CompoundCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                            plainText = compound.getPlainText();
+                        }
                     }
-                    plainText = compound.getPlainText();
                 } else if (rawData != null && decodeText) {
                     plainText = new String(rawData, StandardCharsets.UTF_8);
                 } else {
@@ -752,8 +774,13 @@ public class PGPEngine {
                 plainText = "";
             }
 
-            return new DecryptResult(plainText, rawData,
-                    DecryptResult.VerificationStatus.NOT_SIGNED, null, metaBuilder.build(), compound, tempFile);
+            if (tarArchive != null) {
+                return new DecryptResult(plainText, rawData,
+                        DecryptResult.VerificationStatus.NOT_SIGNED, null, metaBuilder.build(), tarArchive, tempFile);
+            } else {
+                return new DecryptResult(plainText, rawData,
+                        DecryptResult.VerificationStatus.NOT_SIGNED, null, metaBuilder.build(), compound, tempFile);
+            }
         }
 
         throw new PGPException("Unexpected packet: " + (message != null ? message.getClass().getName() : "null"));
