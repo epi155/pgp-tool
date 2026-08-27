@@ -847,7 +847,8 @@ public class SendPanel extends JPanel {
                         } else {
                             List<CompoundMessage.Attachment> atts = new ArrayList<>();
                             for (File f : attachmentFiles) {
-                                atts.add(new CompoundMessage.Attachment(f.getName(), Files.readAllBytes(f.toPath())));
+                                long mtime = Files.getLastModifiedTime(f.toPath()).toMillis();
+                                atts.add(new CompoundMessage.Attachment(f.getName(), Files.readAllBytes(f.toPath()), mtime));
                             }
                             data = CompoundCodec.encode(new CompoundMessage(fPlainText, atts));
                         }

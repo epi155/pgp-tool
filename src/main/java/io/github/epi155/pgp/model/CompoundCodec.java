@@ -9,7 +9,7 @@ import java.util.List;
 public class CompoundCodec {
 
     private static final byte[] MAGIC = {'P', 'G', 'P', 'C'};
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final byte TYPE_TEXT = 0;
     private static final byte TYPE_BINARY = 1;
 
@@ -38,6 +38,7 @@ public class CompoundCodec {
             dataOut.writeByte(TYPE_BINARY);
             dataOut.writeInt(nameBytes.length);
             dataOut.write(nameBytes);
+            dataOut.writeLong(att.getModificationTime());
             byte[] content = att.getContent();
             dataOut.writeLong(content.length);
             dataOut.write(content);
@@ -58,7 +59,7 @@ public class CompoundCodec {
         }
 
         int version = dataIn.readUnsignedByte();
-        if (version != VERSION) {
+        if (version != 1 && version != VERSION) {
             throw new IOException("Unsupported PGPC version: " + version);
         }
 
@@ -79,6 +80,10 @@ public class CompoundCodec {
                 cumulativeOffset += filenameLen;
                 filename = new String(nameBytes, StandardCharsets.UTF_8);
             }
+            long modificationTime = 0;
+            if (version >= 2 && type == TYPE_BINARY) {
+                modificationTime = dataIn.readLong();
+            }
             long contentLen = dataIn.readLong();
             cumulativeOffset += 8;
             if (contentLen > Integer.MAX_VALUE) {
@@ -96,12 +101,12 @@ public class CompoundCodec {
                     dataIn.skipBytes(contentLenInt);
                     cumulativeOffset += contentLenInt;
                     attachments.add(new CompoundMessage.Attachment(
-                            filename, tempFile, cumulativeOffset - contentLenInt, contentLen));
+                            filename, tempFile, cumulativeOffset - contentLenInt, contentLenInt, modificationTime));
                 } else {
                     byte[] content = new byte[contentLenInt];
                     dataIn.readFully(content);
                     cumulativeOffset += contentLenInt;
-                    attachments.add(new CompoundMessage.Attachment(filename, content));
+                    attachments.add(new CompoundMessage.Attachment(filename, content, modificationTime));
                 }
             }
         }

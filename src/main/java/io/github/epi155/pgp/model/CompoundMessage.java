@@ -18,24 +18,37 @@ public class CompoundMessage {
         private final long offset;
         private final long length;
         private byte[] cachedContent;
+        private final long modificationTime;
 
         public Attachment(String filename, byte[] content) {
+            this(filename, content, 0);
+        }
+
+        public Attachment(String filename, byte[] content, long modificationTime) {
             this.filename = filename;
             this.tempFile = null;
             this.offset = 0;
             this.length = content.length;
             this.cachedContent = content;
+            this.modificationTime = modificationTime;
         }
 
         public Attachment(String filename, Path tempFile, long offset, long length) {
+            this(filename, tempFile, offset, length, 0);
+        }
+
+        public Attachment(String filename, Path tempFile, long offset, long length, long modificationTime) {
             this.filename = filename;
             this.tempFile = tempFile;
             this.offset = offset;
             this.length = length;
             this.cachedContent = null;
+            this.modificationTime = modificationTime;
         }
 
         public String getFilename() { return filename; }
+
+        public long getModificationTime() { return modificationTime; }
 
         public byte[] getContent() {
             if (cachedContent == null && tempFile != null) {

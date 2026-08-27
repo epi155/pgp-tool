@@ -11,6 +11,7 @@ import org.bouncycastle.openpgp.PGPSecretKey;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.Frame;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.Transferable;
@@ -20,6 +21,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.*;
 import java.util.List;
 
@@ -221,12 +224,34 @@ public class ReceivePanel extends JPanel {
         attachListModel = new DefaultListModel<>();
         attachList = new JList<>(attachListModel);
         attachList.setVisibleRowCount(3);
+        attachList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         JScrollPane attachScroll = new JScrollPane(attachList);
         attachScroll.setBorder(BorderFactory.createTitledBorder("Attachments"));
         saveAttachButton = new JButton("Save attachment...");
         saveAttachButton.setEnabled(false);
         attachList.addListSelectionListener(e ->
                 saveAttachButton.setEnabled(!attachList.isSelectionEmpty()));
+
+        // Key bindings for attachment list
+        InputMap im = attachList.getInputMap(JComponent.WHEN_FOCUSED);
+        ActionMap am = attachList.getActionMap();
+        im.put(KeyStroke.getKeyStroke("control A"), "selectAllAttachments");
+        am.put("selectAllAttachments", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                int size = attachList.getModel().getSize();
+                if (size > 0) {
+                    attachList.setSelectionInterval(0, size - 1);
+                }
+            }
+        });
+        im.put(KeyStroke.getKeyStroke("control S"), "saveAttachments");
+        am.put("saveAttachments", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                saveAttachments();
+            }
+        });
 
         cipherFilePanel.add(fileRow, BorderLayout.NORTH);
         cipherFilePanel.add(attachScroll, BorderLayout.CENTER);
@@ -532,18 +557,78 @@ public class ReceivePanel extends JPanel {
     }
 
     private void saveAttachment(ActionEvent e) {
-        int idx = attachList.getSelectedIndex();
-        if (idx < 0 || lastCompound == null || idx >= lastCompound.getAttachments().size()) return;
-        CompoundMessage.Attachment att = lastCompound.getAttachments().get(idx);
+        saveAttachments();
+    }
+
+    private void saveAttachments() {
+        int[] indices = attachList.getSelectedIndices();
+        if (indices.length == 0 || lastCompound == null) return;
+
         JFileChooser fc = new JFileChooser();
-        fc.setSelectedFile(new File(att.getFilename()));
-        if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+        fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+        fc.setDialogTitle(indices.length == 1 ? "Save Attachment" : "Save Attachments");
+
+        if (indices.length == 1) {
+            CompoundMessage.Attachment att = lastCompound.getAttachments().get(indices[0]);
+            fc.setSelectedFile(new File(att.getFilename()));
+        }
+
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+        Path target = fc.getSelectedFile().toPath();
+        boolean isDir = Files.isDirectory(target);
+
+        if (indices.length > 1 && !isDir) {
+            UIUtils.showError(this, "Per salvare più allegati seleziona una directory.", null);
+            return;
+        }
+
+        saveAttachmentsTo(indices, target, isDir);
+    }
+
+    private void saveAttachmentsTo(int[] indices, Path target, boolean isDir) {
+        Frame frame = (Frame) SwingUtilities.getWindowAncestor(this);
+        ConflictResolver resolver = new ConflictResolver(frame);
+        for (int idx : indices) {
+            CompoundMessage.Attachment att = lastCompound.getAttachments().get(idx);
+            Path dest = isDir ? target.resolve(att.getFilename()) : target;
+
+            if (Files.exists(dest)) {
+                ConflictResolver.Action action = resolver.prompt(att.getFilename());
+                if (action == ConflictResolver.Action.SKIP) continue;
+                if (action == ConflictResolver.Action.RENAME) {
+                    dest = findUniqueName(target, att.getFilename());
+                }
+            }
             try {
-                att.saveTo(fc.getSelectedFile().toPath());
+                att.saveTo(dest);
+                long mtime = att.getModificationTime();
+                if (mtime > 0) {
+                    Files.setLastModifiedTime(dest, FileTime.fromMillis(mtime));
+                }
             } catch (IOException ex) {
                 UIUtils.showError(this, "Error saving attachment:\n" + ex.getMessage(), ex);
             }
         }
+    }
+
+    private Path findUniqueName(Path dir, String filename) {
+        Path base = dir.resolve(filename);
+        if (!Files.exists(base)) return base;
+        String name = filename;
+        String ext = "";
+        int dot = filename.lastIndexOf('.');
+        if (dot > 0) {
+            name = filename.substring(0, dot);
+            ext = filename.substring(dot);
+        }
+        int counter = 1;
+        Path candidate;
+        do {
+            candidate = dir.resolve(name + "_" + counter + ext);
+            counter++;
+        } while (Files.exists(candidate));
+        return candidate;
     }
 
     private void updateShowUsedButton() {
@@ -930,5 +1015,59 @@ public class ReceivePanel extends JPanel {
             try { java.nio.file.Files.deleteIfExists(p); } catch (java.io.IOException ignored) {}
         }
         tempFiles.clear();
+    }
+
+    private static class ConflictResolver {
+        private final Frame owner;
+        private Action lastAction = Action.NO;
+        private boolean applyToAll = false;
+
+        ConflictResolver(Frame owner) {
+            this.owner = owner;
+        }
+
+        enum Action { YES, NO, ALL_YES, ALL_NO, SKIP, RENAME }
+
+        Action prompt(String filename) {
+            if (applyToAll) {
+                return lastAction == Action.ALL_YES ? Action.YES : Action.SKIP;
+            }
+
+            JPanel panel = new JPanel(new BorderLayout(10, 10));
+            panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            panel.add(new JLabel("<html>File <b>" + escapeHtml(filename) + "</b> already exists.<br>What do you want to do?</html>"), BorderLayout.CENTER);
+
+            JCheckBox applyAll = new JCheckBox("Apply to all");
+            panel.add(applyAll, BorderLayout.SOUTH);
+
+            Object[] options = {
+                "Yes", "No", "All", "None", "Rename"
+            };
+            int result = JOptionPane.showOptionDialog(
+                owner, panel, "File Exists",
+                JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
+                null, options, options[0]
+            );
+
+            Action action;
+            switch (result) {
+                case 0: action = Action.YES; break;
+                case 1: action = Action.NO; break;
+                case 2: action = Action.ALL_YES; break;
+                case 3: action = Action.ALL_NO; break;
+                case 4: action = Action.RENAME; break;
+                default: action = Action.SKIP;
+            }
+
+            if (applyAll.isSelected()) {
+                applyToAll = true;
+                lastAction = action;
+            }
+            return action;
+        }
+
+        private String escapeHtml(String s) {
+            return s.replace("&", "\u0026").replace("<", "\u003C").replace(">", "\u003E");
+        }
     }
 }
