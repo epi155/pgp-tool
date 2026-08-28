@@ -309,7 +309,7 @@ public class SendPanel extends JPanel {
                             addFileToTree(f, targetNode);
                         }
                     }
-                    attachTreeModel.reload();
+                    reloadTreePreservingExpansion();
                     updateOutputMode();
                     return true;
                 } catch (Exception ex) { return false; }
@@ -385,7 +385,7 @@ public class SendPanel extends JPanel {
                                 }
                             }
                         }
-                        attachTreeModel.reload();
+                        reloadTreePreservingExpansion();
                         updateOutputMode();
                         return true;
                     } catch (Exception ex) { return false; }
@@ -535,7 +535,7 @@ public class SendPanel extends JPanel {
                     addFileToTree(f, attachRoot);
                 }
             }
-            attachTreeModel.reload();
+            reloadTreePreservingExpansion();
             updateOutputMode();
         }
     }
@@ -543,14 +543,6 @@ public class SendPanel extends JPanel {
     private void removeAttachment(ActionEvent e) {
         TreePath[] paths = attachTree.getSelectionPaths();
         if (paths == null || paths.length == 0) return;
-
-        Set<String> expandedPaths = new HashSet<>();
-        for (int i = 0; i < attachTree.getRowCount(); i++) {
-            TreePath tp = attachTree.getPathForRow(i);
-            if (attachTree.isExpanded(tp)) {
-                expandedPaths.add(pathToString(tp));
-            }
-        }
 
         for (TreePath path : paths) {
             Object node = path.getLastPathComponent();
@@ -562,13 +554,7 @@ public class SendPanel extends JPanel {
                 }
             }
         }
-        attachTreeModel.reload();
-        for (int i = 0; i < attachTree.getRowCount(); i++) {
-            TreePath tp = attachTree.getPathForRow(i);
-            if (expandedPaths.contains(pathToString(tp))) {
-                attachTree.expandRow(i);
-            }
-        }
+        reloadTreePreservingExpansion();
         updateOutputMode();
     }
 
@@ -578,6 +564,23 @@ public class SendPanel extends JPanel {
             sb.append("/").append(comp.toString());
         }
         return sb.toString();
+    }
+
+    private void reloadTreePreservingExpansion() {
+        Set<String> expandedPaths = new HashSet<>();
+        for (int i = 0; i < attachTree.getRowCount(); i++) {
+            TreePath tp = attachTree.getPathForRow(i);
+            if (attachTree.isExpanded(tp)) {
+                expandedPaths.add(pathToString(tp));
+            }
+        }
+        attachTreeModel.reload();
+        for (int i = 0; i < attachTree.getRowCount(); i++) {
+            TreePath tp = attachTree.getPathForRow(i);
+            if (expandedPaths.contains(pathToString(tp))) {
+                attachTree.expandRow(i);
+            }
+        }
     }
 
     private void removeFilesFromNode(AttachmentNode node) {
