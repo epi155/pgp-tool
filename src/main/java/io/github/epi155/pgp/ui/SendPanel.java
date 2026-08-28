@@ -34,7 +34,9 @@ import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static io.github.epi155.pgp.ui.UIUtils.*;
 
@@ -265,6 +267,17 @@ public class SendPanel extends JPanel {
         removeAttachButton.addActionListener(this::removeAttachment);
         attachTree.addTreeSelectionListener(e ->
                 removeAttachButton.setEnabled(attachTree.getSelectionCount() > 0));
+        {
+            InputMap im = attachTree.getInputMap(JComponent.WHEN_FOCUSED);
+            ActionMap am = attachTree.getActionMap();
+            im.put(KeyStroke.getKeyStroke("DELETE"), "removeAttachment");
+            am.put("removeAttachment", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    removeAttachment(e);
+                }
+            });
+        }
         attachTree.setTransferHandler(new TransferHandler() {
             @Override
             public boolean canImport(TransferSupport support) {
@@ -530,6 +543,15 @@ public class SendPanel extends JPanel {
     private void removeAttachment(ActionEvent e) {
         TreePath[] paths = attachTree.getSelectionPaths();
         if (paths == null || paths.length == 0) return;
+
+        Set<String> expandedPaths = new HashSet<>();
+        for (int i = 0; i < attachTree.getRowCount(); i++) {
+            TreePath tp = attachTree.getPathForRow(i);
+            if (attachTree.isExpanded(tp)) {
+                expandedPaths.add(pathToString(tp));
+            }
+        }
+
         for (TreePath path : paths) {
             Object node = path.getLastPathComponent();
             if (node instanceof AttachmentNode) {
@@ -541,7 +563,21 @@ public class SendPanel extends JPanel {
             }
         }
         attachTreeModel.reload();
+        for (int i = 0; i < attachTree.getRowCount(); i++) {
+            TreePath tp = attachTree.getPathForRow(i);
+            if (expandedPaths.contains(pathToString(tp))) {
+                attachTree.expandRow(i);
+            }
+        }
         updateOutputMode();
+    }
+
+    private static String pathToString(TreePath tp) {
+        StringBuilder sb = new StringBuilder();
+        for (Object comp : tp.getPath()) {
+            sb.append("/").append(comp.toString());
+        }
+        return sb.toString();
     }
 
     private void removeFilesFromNode(AttachmentNode node) {
