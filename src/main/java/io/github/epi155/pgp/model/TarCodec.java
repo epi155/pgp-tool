@@ -201,6 +201,10 @@ public class TarCodec {
                     }
                     TarEntry tarEntry = new TarEntry(entry.getName(), content, entry.getModTime().getTime());
                     tarEntry.setMode(entry.getMode());
+                    tarEntry.setUserName(entry.getUserName());
+                    tarEntry.setGroupName(entry.getGroupName());
+                    tarEntry.setUserId(entry.getUserId());
+                    tarEntry.setGroupId(entry.getGroupId());
                     if (entry.getLinkName() != null && !entry.getLinkName().isEmpty()) {
                         tarEntry.setLinkName(entry.getLinkName());
                     }

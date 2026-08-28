@@ -147,6 +147,38 @@ public class TarEntry {
         entry.setLinkName(linkName);
     }
 
+    public String getUserName() {
+        return entry.getUserName();
+    }
+
+    public void setUserName(String name) {
+        entry.setUserName(name);
+    }
+
+    public String getGroupName() {
+        return entry.getGroupName();
+    }
+
+    public void setGroupName(String name) {
+        entry.setGroupName(name);
+    }
+
+    public long getUserId() {
+        return entry.getUserId();
+    }
+
+    public void setUserId(long id) {
+        entry.setUserId(id);
+    }
+
+    public long getGroupId() {
+        return entry.getGroupId();
+    }
+
+    public void setGroupId(long id) {
+        entry.setGroupId(id);
+    }
+
     public byte getTypeFlag() {
         return (byte) (entry.getMode() >> 12 & 0xF);
     }

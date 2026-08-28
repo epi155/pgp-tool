@@ -680,6 +680,7 @@ public class ReceivePanel extends JPanel {
                             if (in != null) Files.copy(in, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                         }
                         if (te.getModificationTime() > 0) Files.setLastModifiedTime(dest, FileTime.fromMillis(te.getModificationTime()));
+                        restoreOwnership(dest, te);
                         break;
                     case COMPOUND_ENTRY:
                         CompoundMessage.Attachment ca = node.getCompoundAtt();
@@ -714,6 +715,31 @@ public class ReceivePanel extends JPanel {
             sb.append(n.isDirectory() ? n.getDisplayName() : n.getDisplayName());
         }
         return sb.toString();
+    }
+
+    private void restoreOwnership(Path target, TarEntry te) {
+        if (!target.getFileSystem().supportedFileAttributeViews().contains("posix")) return;
+        java.nio.file.attribute.PosixFileAttributeView posixView =
+                Files.getFileAttributeView(target, java.nio.file.attribute.PosixFileAttributeView.class);
+        if (posixView == null) return;
+        String userName = te.getUserName();
+        if (userName != null && !userName.isEmpty()) {
+            try {
+                java.nio.file.attribute.UserPrincipal owner = target.getFileSystem()
+                        .getUserPrincipalLookupService()
+                        .lookupPrincipalByName(userName);
+                posixView.setOwner(owner);
+            } catch (Exception ignored) {}
+        }
+        String groupName = te.getGroupName();
+        if (groupName != null && !groupName.isEmpty()) {
+            try {
+                java.nio.file.attribute.GroupPrincipal group = target.getFileSystem()
+                        .getUserPrincipalLookupService()
+                        .lookupPrincipalByGroupName(groupName);
+                posixView.setGroup(group);
+            } catch (Exception ignored) {}
+        }
     }
 
     private Path findUniqueName(Path dir, String filename) {

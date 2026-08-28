@@ -8,7 +8,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.*;
 import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.GroupPrincipal;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.UserPrincipal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -225,8 +228,9 @@ public class TarArchive {
         }
     }
 
-    public void extractTo(Path targetDir) throws IOException {
+    public List<String> extractTo(Path targetDir) throws IOException {
         Files.createDirectories(targetDir);
+        List<String> warnings = new ArrayList<>();
         for (TarEntry entry : getFlatEntries()) {
             String name = entry.getName();
             if (name == null || name.isEmpty() || ".".equals(name) || "..".equals(name)) continue;
@@ -252,6 +256,36 @@ public class TarArchive {
                         Files.setPosixFilePermissions(target, perms);
                     } catch (Exception ignored) {}
                 }
+                restoreOwnership(target, entry, warnings);
+            }
+        }
+        return warnings;
+    }
+
+    private void restoreOwnership(Path target, TarEntry entry, List<String> warnings) {
+        if (!target.getFileSystem().supportedFileAttributeViews().contains("posix")) return;
+        PosixFileAttributeView posixView = Files.getFileAttributeView(target, PosixFileAttributeView.class);
+        if (posixView == null) return;
+        String userName = entry.getUserName();
+        if (userName != null && !userName.isEmpty()) {
+            try {
+                UserPrincipal owner = target.getFileSystem()
+                        .getUserPrincipalLookupService()
+                        .lookupPrincipalByName(userName);
+                posixView.setOwner(owner);
+            } catch (Exception e) {
+                warnings.add("owner non ripristinato per " + entry.getName() + ": " + e.getMessage());
+            }
+        }
+        String groupName = entry.getGroupName();
+        if (groupName != null && !groupName.isEmpty()) {
+            try {
+                GroupPrincipal group = target.getFileSystem()
+                        .getUserPrincipalLookupService()
+                        .lookupPrincipalByGroupName(groupName);
+                posixView.setGroup(group);
+            } catch (Exception e) {
+                warnings.add("group non ripristinato per " + entry.getName() + ": " + e.getMessage());
             }
         }
     }

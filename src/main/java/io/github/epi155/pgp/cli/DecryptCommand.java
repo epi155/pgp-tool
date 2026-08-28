@@ -174,7 +174,10 @@ public final class DecryptCommand {
                     throw new CliException("Message contains attachments: use --output-dir <dir> to save them", true);
                 }
                 Path dir = Path.of(outputDir);
-                result.getTarArchive().extractTo(dir);
+                java.util.List<String> warnings = result.getTarArchive().extractTo(dir);
+                for (String w : warnings) {
+                    System.err.println("pgp-tool: warning: " + w);
+                }
                 if (!quiet) {
                     for (io.github.epi155.pgp.model.TarEntry te : result.getTarArchive().getFlatEntries()) {
                         System.err.println("Attachment: " + dir.resolve(te.getName()));
