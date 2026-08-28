@@ -138,7 +138,7 @@ public final class EncryptCommand {
                     try (var walk = Files.walk(single)) {
                         for (Path entry : (Iterable<Path>) walk::iterator) {
                             if (Files.isRegularFile(entry) || Files.isSymbolicLink(entry)) {
-                                String rel = single.relativize(entry).toString();
+                                String rel = single.getFileName().resolve(single.relativize(entry)).toString();
                                 TarEntry te = TarEntry.fromPath(entry, rel);
                                 te.setModificationTime(Files.getLastModifiedTime(entry).toMillis());
                                 tarData.addEntry(te);
@@ -413,7 +413,9 @@ public final class EncryptCommand {
                         ? "  --compress ALGO         ZIP, ZLIB, BZIP2, XZ,\n"
                         + "                            UNCOMPRESSED (default ZLIB)\n"
                         : "  --compress ALGO         ZIP, ZLIB, BZIP2, UNCOMPRESSED (default ZLIB)\n")
-                + "  --attach FILE           Attach FILE (repeatable) in a compound message\n"
+                + "  --attach FILE           Attach FILE or directory (repeatable);\n"
+                + "                            directories are walked recursively,\n"
+                + "                            symlinks are preserved\n"
                 + "  --armor / --no-armor    ASCII armor the output (default armor)\n"
                 + "  --force                 Overwrite the output file if it exists\n"
                 + "  --quiet                 Suppress warnings\n";
