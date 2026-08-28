@@ -87,12 +87,12 @@ public class TarCodec {
         }
 
         int version = dataIn.readUnsignedByte();
-        if (version != 1 && version != 2 && version != VERSION) {
+        if (version != 1 && version != VERSION) {
             throw new IOException("Unsupported PGPC version: " + version);
         }
 
-        // For v1/v2, delegate to CompoundCodec
-        if (version == 1 || version == 2) {
+        // For v1, delegate to CompoundCodec
+        if (version == 1) {
             // Need to re-read from beginning - create a new stream with the data we already read
             // For simplicity, we'll handle this by reading the rest and prepending what we read
             // Actually, CompoundCodec expects to read from the start, so we need a different approach
@@ -237,6 +237,6 @@ public class TarCodec {
         }
         if (data.length < 5) return false;
         int version = data[4] & 0xFF;
-        return version == 1 || version == 2;
+        return version == 1;
     }
 }

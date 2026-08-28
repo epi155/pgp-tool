@@ -197,7 +197,7 @@ Wire format per chunk (64 KiB, encoded size 10) — `AeadEncryptingStream`/`Aead
 
 - Custom format with magic bytes `PGPC` (checked in `CompoundCodec.isCompound()`)
 - Stream format: text part + N binary attachment parts, each length-prefixed
-- Only used for backward-compatible reading of old v1/v2 messages; new encrypt always produces tar v3
+- Only used for backward-compatible reading of old v1 messages; new encrypt always produces tar v3
 
 ## Tar archive format (v3)
 
@@ -213,7 +213,7 @@ New encryption produces PAX tar archives (`LONGFILE_POSIX`) with full metadata p
   `Files.setPosixFilePermissions`). `getFlatEntries()` returns all entries in tree order.
 - **TarCodec**: encode/decode between `TarArchive` and byte stream. `encode(TarArchive, OutputStream)`
   uses a temp file for streaming (reduces peak memory). `decode()` handles v3 tar format and falls
-  back to v1/v2 `CompoundCodec` for backward compatibility.
+  back to v1 `CompoundCodec` for backward compatibility.
 - **PGPEngine**: `writeSignAndLiteralTar()` encodes the tar to bytes and writes a signed+literal
   data packet. Single attachment without directories produces a gpg-compatible literal data packet;
   multiple attachments or directories produce tar v3.

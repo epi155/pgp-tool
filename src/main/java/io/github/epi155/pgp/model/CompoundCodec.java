@@ -9,43 +9,8 @@ import java.util.List;
 public class CompoundCodec {
 
     private static final byte[] MAGIC = {'P', 'G', 'P', 'C'};
-    private static final int VERSION = 2;
     private static final byte TYPE_TEXT = 0;
     private static final byte TYPE_BINARY = 1;
-
-    public static byte[] encode(CompoundMessage msg) throws IOException {
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        encode(msg, buf);
-        return buf.toByteArray();
-    }
-
-    public static void encode(CompoundMessage msg, OutputStream out) throws IOException {
-        int numParts = 1 + msg.getAttachments().size();
-        DataOutputStream dataOut = new DataOutputStream(out);
-
-        dataOut.write(MAGIC);
-        dataOut.writeByte(VERSION);
-        dataOut.writeInt(numParts);
-
-        byte[] textBytes = msg.getPlainText().getBytes(StandardCharsets.UTF_8);
-        dataOut.writeByte(TYPE_TEXT);
-        dataOut.writeInt(0);
-        dataOut.writeLong(textBytes.length);
-        dataOut.write(textBytes);
-
-        for (CompoundMessage.Attachment att : msg.getAttachments()) {
-            byte[] nameBytes = att.getFilename().getBytes(StandardCharsets.UTF_8);
-            dataOut.writeByte(TYPE_BINARY);
-            dataOut.writeInt(nameBytes.length);
-            dataOut.write(nameBytes);
-            dataOut.writeLong(att.getModificationTime());
-            byte[] content = att.getContent();
-            dataOut.writeLong(content.length);
-            dataOut.write(content);
-        }
-
-        dataOut.flush();
-    }
 
     public static CompoundMessage decode(InputStream in, int totalSize, Path tempFile) throws IOException {
         DataInputStream dataIn = new DataInputStream(in);
@@ -59,7 +24,7 @@ public class CompoundCodec {
         }
 
         int version = dataIn.readUnsignedByte();
-        if (version != 1 && version != VERSION) {
+        if (version != 1) {
             throw new IOException("Unsupported PGPC version: " + version);
         }
 
@@ -81,9 +46,6 @@ public class CompoundCodec {
                 filename = new String(nameBytes, StandardCharsets.UTF_8);
             }
             long modificationTime = 0;
-            if (version >= 2 && type == TYPE_BINARY) {
-                modificationTime = dataIn.readLong();
-            }
             long contentLen = dataIn.readLong();
             cumulativeOffset += 8;
             if (contentLen > Integer.MAX_VALUE) {
