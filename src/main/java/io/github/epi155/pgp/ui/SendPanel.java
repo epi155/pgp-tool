@@ -16,7 +16,6 @@ import org.bouncycastle.openpgp.PGPSecretKey;
 import javax.swing.*;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
-import java.nio.file.Path;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -291,8 +290,9 @@ public class SendPanel extends JPanel {
                         }
                     }
                     for (File f : files) {
-                        if (!attachmentFiles.contains(f)) {
-                            attachmentFiles.add(f);
+                        if (f.isDirectory()) {
+                            addDirectoryToTree(f, targetNode);
+                        } else {
                             addFileToTree(f, targetNode);
                         }
                     }
@@ -330,7 +330,7 @@ public class SendPanel extends JPanel {
                             File f = files.get(i);
                             if (attachmentFiles.contains(f)) continue;
                             boolean attach = i > 0;
-                            if (!attach) {
+                            if (!attach && f.isFile()) {
                                 byte[] header = new byte[16384];
                                 int len;
                                 try (FileInputStream fis = new FileInputStream(f)) {
@@ -361,9 +361,16 @@ public class SendPanel extends JPanel {
                                 } else {
                                     attach = true;
                                 }
+                            } else if (!attach) {
+                                attach = true;
                             }
-                            attachmentFiles.add(f);
-                            addFileToTree(f);
+                            if (attach) {
+                                if (f.isDirectory()) {
+                                    addDirectoryToTree(f, attachRoot);
+                                } else {
+                                    addFileToTree(f, attachRoot);
+                                }
+                            }
                         }
                         attachTreeModel.reload();
                         updateOutputMode();
@@ -505,12 +512,14 @@ public class SendPanel extends JPanel {
 
     private void addAttachment(ActionEvent e) {
         JFileChooser fc = new JFileChooser();
+        fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
         fc.setMultiSelectionEnabled(true);
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             for (File f : fc.getSelectedFiles()) {
-                if (!attachmentFiles.contains(f)) {
-                    attachmentFiles.add(f);
-                    addFileToTree(f);
+                if (f.isDirectory()) {
+                    addDirectoryToTree(f, attachRoot);
+                } else {
+                    addFileToTree(f, attachRoot);
                 }
             }
             attachTreeModel.reload();
@@ -525,43 +534,75 @@ public class SendPanel extends JPanel {
             Object node = path.getLastPathComponent();
             if (node instanceof AttachmentNode) {
                 AttachmentNode an = (AttachmentNode) node;
-                if (an.getFile() != null) {
-                    attachmentFiles.remove(an.getFile());
+                removeFilesFromNode(an);
+                if (an.getParent() != null) {
+                    ((javax.swing.tree.DefaultMutableTreeNode) an.getParent()).remove(an);
                 }
             }
-        }
-        attachRoot.removeAllChildren();
-        for (File f : attachmentFiles) {
-            addFileToTree(f);
         }
         attachTreeModel.reload();
         updateOutputMode();
     }
 
-    private void addFileToTree(File file) {
-        addFileToTree(file, attachRoot);
+    private void removeFilesFromNode(AttachmentNode node) {
+        if (node.getFile() != null) {
+            attachmentFiles.remove(node.getFile());
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            removeFilesFromNode((AttachmentNode) node.getChildAt(i));
+        }
     }
 
     private void addFileToTree(File file, AttachmentNode targetNode) {
-        Path absPath = file.toPath().toAbsolutePath().normalize();
-        Path cwd = Path.of("").toAbsolutePath().normalize();
-        String pathStr;
-        try {
-            pathStr = cwd.relativize(absPath).toString().replace("\\", "/");
-        } catch (IllegalArgumentException e) {
-            pathStr = absPath.toString().replace("\\", "/");
-        }
-        String[] parts = pathStr.split("/");
-        AttachmentNode current = targetNode;
-        for (int i = 0; i < parts.length - 1; i++) {
-            AttachmentNode child = findChildDir(current, parts[i]);
-            if (child == null) {
-                child = AttachmentNode.directory(parts[i]);
-                current.add(child);
+        if (attachmentFiles.contains(file)) return;
+        attachmentFiles.add(file);
+        targetNode.add(AttachmentNode.ofFile(file));
+    }
+
+    private void addDirectoryToTree(File dir, AttachmentNode targetNode) {
+        AttachmentNode dirNode = AttachmentNode.directory(dir.getName());
+        targetNode.add(dirNode);
+        File[] children = dir.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            if (child.isFile() || child.isDirectory()) {
+                if (child.isFile()) {
+                    if (!attachmentFiles.contains(child)) {
+                        attachmentFiles.add(child);
+                        dirNode.add(AttachmentNode.ofFile(child));
+                    }
+                } else {
+                    addDirectoryToTree(child, dirNode);
+                }
             }
-            current = child;
         }
-        current.add(AttachmentNode.ofFile(file));
+    }
+
+    private String getTarPath(AttachmentNode node) {
+        List<String> parts = new ArrayList<>();
+        AttachmentNode current = node;
+        while (current != null && current != attachRoot) {
+            parts.add(0, current.getDisplayName());
+            current = (current.getParent() instanceof AttachmentNode)
+                    ? (AttachmentNode) current.getParent() : null;
+        }
+        return String.join("/", parts);
+    }
+
+    private void addTarEntriesFromTree(AttachmentNode node, TarArchive tarData) throws Exception {
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AttachmentNode child = (AttachmentNode) node.getChildAt(i);
+            if (child.getFile() != null) {
+                File f = child.getFile();
+                String tarPath = getTarPath(child);
+                TarEntry te = TarEntry.fromPath(f.toPath(), tarPath);
+                long mtime = Files.getLastModifiedTime(f.toPath()).toMillis();
+                te.setModificationTime(mtime);
+                tarData.addEntry(te);
+            } else if (child.isDirectory()) {
+                addTarEntriesFromTree(child, tarData);
+            }
+        }
     }
 
     private AttachmentNode findChildDir(AttachmentNode parent, String name) {
@@ -924,12 +965,7 @@ public class SendPanel extends JPanel {
                             if (fPlainText != null && !fPlainText.isEmpty()) {
                                 tarData.setPlainText(fPlainText);
                             }
-                            for (File f : attachmentFiles) {
-                                TarEntry te = TarEntry.fromPath(f.toPath(), f.getName());
-                                long mtime = Files.getLastModifiedTime(f.toPath()).toMillis();
-                                te.setModificationTime(mtime);
-                                tarData.addEntry(te);
-                            }
+                            addTarEntriesFromTree(attachRoot, tarData);
                         }
                         armor = armorCheckBox.isSelected();
                     } else {

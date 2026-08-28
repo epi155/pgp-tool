@@ -178,6 +178,21 @@ Wire format per chunk (64 KiB, encoded size 10) — `AeadEncryptingStream`/`Aead
 - If the typed name has no extension and the encrypted filter is selected, the chosen extension is auto-appended:
   `asc` when `armorCheckBox` is checked (default), else `gpg`.
 
+## Send UI attachment tree
+
+- The JTree (`attachRoot`) is the **source of truth** for both display and tar structure.
+- `addFileToTree(File, AttachmentNode)` adds a single file node under the target.
+- `addDirectoryToTree(File, AttachmentNode)` recursively walks the directory and adds FILE nodes
+  for each file found. Intermediate DIRECTORY nodes are created for visual hierarchy.
+- `getTarPath(AttachmentNode)` computes the tar entry path by walking up the tree from the
+  file node to `attachRoot`, joining display names with `/`.
+- `addTarEntriesFromTree(AttachmentNode, TarArchive)` walks the tree and creates `TarEntry`
+  objects with the computed tar paths — this is what `onEncrypt` calls.
+- DnD drop target: dropping on a DIRECTORY places items as children; dropping on a FILE or
+  empty space places items as siblings (in the parent directory).
+- `removeAttachment` removes the selected node (and all children) from the tree and from
+  `attachmentFiles`.
+
 ## Compound message format (legacy, read-only)
 
 - Custom format with magic bytes `PGPC` (checked in `CompoundCodec.isCompound()`)
