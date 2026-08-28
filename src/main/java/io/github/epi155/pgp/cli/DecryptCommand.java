@@ -214,9 +214,9 @@ public final class DecryptCommand {
         } catch (CliException e) {
             throw e;
         } catch (PassphraseRequiredException e) {
-            throw new CliException(keyringLabel(secretKeyFile, e.getKeyId()) + e.getMessage());
+            throw new CliException(keyringLabel(secretKeyFile, e.getKeyId()) + e.getMessage(), e);
         } catch (Exception e) {
-            throw new CliException("Decryption failed: " + messageOf(e));
+            throw new CliException("Decryption failed: " + messageOf(e), e);
         } finally {
             Files.deleteIfExists(temp);
         }
@@ -247,7 +247,7 @@ public final class DecryptCommand {
                 }
                 System.out.flush();
             } catch (IOException e) {
-                throw new CliException("Failed to write output: " + e.getMessage());
+                throw new CliException("Failed to write output: " + e.getMessage(), e);
             }
         } else {
             Path target = Path.of(output);
@@ -257,7 +257,7 @@ public final class DecryptCommand {
             try {
                 Files.copy(src, target, StandardCopyOption.REPLACE_EXISTING);
             } catch (IOException e) {
-                throw new CliException("Failed to write " + output + ": " + e.getMessage());
+                throw new CliException("Failed to write " + output + ": " + e.getMessage(), e);
             }
         }
     }
@@ -280,7 +280,7 @@ public final class DecryptCommand {
         try {
             Files.writeString(target, text);
         } catch (IOException e) {
-            throw new CliException("Failed to write " + output + ": " + e.getMessage());
+            throw new CliException("Failed to write " + output + ": " + e.getMessage(), e);
         }
     }
 

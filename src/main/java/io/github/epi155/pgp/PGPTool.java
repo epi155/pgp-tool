@@ -87,12 +87,14 @@ public class PGPTool {
         try {
             return Cli.run(args, privateExtensions, curve448);
         } catch (CliException e) {
+            AppLog.error("CLI failure: " + e.getMessage(), e);
             System.err.println("pgp-tool: " + e.getMessage());
             if (e.isUsage()) {
                 System.err.println("Run 'pgp-tool --help' for usage.");
             }
             return e.isUsage() ? 2 : 1;
         } catch (Exception e) {
+            AppLog.error("CLI failure: " + e.getMessage(), e);
             System.err.println("pgp-tool: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
             return 1;
         }

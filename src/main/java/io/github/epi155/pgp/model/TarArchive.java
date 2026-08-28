@@ -1,5 +1,6 @@
 package io.github.epi155.pgp.model;
 
+import io.github.epi155.pgp.log.AppLog;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 
@@ -274,7 +275,8 @@ public class TarArchive {
                         .lookupPrincipalByName(userName);
                 posixView.setOwner(owner);
             } catch (Exception e) {
-                warnings.add("owner non ripristinato per " + entry.getName() + ": " + e.getMessage());
+                AppLog.error("Failed to restore owner for " + entry.getName(), e);
+                warnings.add("Could not restore owner for " + entry.getName() + ": " + e.getMessage());
             }
         }
         String groupName = entry.getGroupName();
@@ -285,7 +287,8 @@ public class TarArchive {
                         .lookupPrincipalByGroupName(groupName);
                 posixView.setGroup(group);
             } catch (Exception e) {
-                warnings.add("group non ripristinato per " + entry.getName() + ": " + e.getMessage());
+                AppLog.error("Failed to restore group for " + entry.getName(), e);
+                warnings.add("Could not restore group for " + entry.getName() + ": " + e.getMessage());
             }
         }
     }

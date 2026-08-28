@@ -112,7 +112,7 @@ public final class GenerateCommand {
         } catch (CliException e) {
             throw e;
         } catch (Exception e) {
-            throw new CliException("Key generation failed: " + e.getMessage());
+            throw new CliException("Key generation failed: " + e.getMessage(), e);
         }
     }
 
@@ -125,7 +125,7 @@ public final class GenerateCommand {
         try {
             return Long.parseLong(value.trim());
         } catch (NumberFormatException e) {
-            throw new CliException(flag + ": invalid number '" + value + "'", true);
+            throw new CliException(flag + ": invalid number '" + value + "'", e, true);
         }
     }
 
@@ -145,7 +145,7 @@ public final class GenerateCommand {
             try {
                 size = Integer.parseInt(algo.substring(4));
             } catch (NumberFormatException e) {
-                throw new CliException("Invalid RSA size in '" + algoToken + "'", true);
+                throw new CliException("Invalid RSA size in '" + algoToken + "'", e, true);
             }
             if (size != 2048 && size != 3072 && size != 4096) {
                 throw new CliException("RSA size must be 2048, 3072 or 4096", true);

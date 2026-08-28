@@ -30,7 +30,7 @@ public final class Io {
                 out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
                 return out.toByteArray();
             } catch (IOException e) {
-                throw new CliException("Failed to read stdin: " + e.getMessage());
+                throw new CliException("Failed to read stdin: " + e.getMessage(), e);
             }
         }
         Path path = Path.of(name);
@@ -40,7 +40,7 @@ public final class Io {
         try {
             return Files.readAllBytes(path);
         } catch (IOException e) {
-            throw new CliException("Failed to read " + name + ": " + e.getMessage());
+            throw new CliException("Failed to read " + name + ": " + e.getMessage(), e);
         }
     }
 
@@ -49,7 +49,7 @@ public final class Io {
             String line = STDIN.readLine();
             return line == null ? "" : line;
         } catch (IOException e) {
-            throw new CliException("Failed to read stdin: " + e.getMessage());
+            throw new CliException("Failed to read stdin: " + e.getMessage(), e);
         }
     }
 
@@ -62,7 +62,7 @@ public final class Io {
             }
             return lines;
         } catch (IOException e) {
-            throw new CliException("Failed to read stdin: " + e.getMessage());
+            throw new CliException("Failed to read stdin: " + e.getMessage(), e);
         }
     }
 
@@ -81,7 +81,7 @@ public final class Io {
             }
             return lines;
         } catch (IOException e) {
-            throw new CliException("Failed to read " + name + ": " + e.getMessage());
+            throw new CliException("Failed to read " + name + ": " + e.getMessage(), e);
         }
     }
 

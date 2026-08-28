@@ -284,9 +284,9 @@ public final class EncryptCommand {
         } catch (CliException e) {
             throw e;
         } catch (PassphraseRequiredException e) {
-            throw new CliException(keyringLabel(signKeyFile, e.getKeyId()) + e.getMessage());
+            throw new CliException(keyringLabel(signKeyFile, e.getKeyId()) + e.getMessage(), e);
         } catch (Exception e) {
-            throw new CliException("Encryption failed: " + messageOf(e));
+            throw new CliException("Encryption failed: " + messageOf(e), e);
         }
 
         if ("-".equals(output)) {
@@ -294,13 +294,13 @@ public final class EncryptCommand {
                 System.out.write(result);
                 System.out.flush();
             } catch (Exception e) {
-                throw new CliException("Failed to write output: " + e.getMessage());
+                throw new CliException("Failed to write output: " + e.getMessage(), e);
             }
         } else {
             try {
                 Files.write(Path.of(output), result);
             } catch (Exception e) {
-                throw new CliException("Failed to write " + output + ": " + e.getMessage());
+                throw new CliException("Failed to write " + output + ": " + e.getMessage(), e);
             }
         }
         return 0;

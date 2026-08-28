@@ -103,7 +103,7 @@ public final class KeySelector {
         } catch (CliException e) {
             throw e;
         } catch (Exception e) {
-            throw new CliException("Failed to load " + source.file + ": " + e.getMessage());
+            throw new CliException("Failed to load " + source.file + ": " + e.getMessage(), e);
         }
     }
 

@@ -34,7 +34,7 @@ public final class ListCommand {
                     bundle = KeyringLoader.loadSecretKeys(file);
                     secret = true;
                 } catch (Exception e2) {
-                    throw new CliException("Failed to load " + f + ": " + e.getMessage());
+                    throw new CliException("Failed to load " + f + ": " + e2.getMessage(), e2);
                 }
             }
             System.out.println("File: " + f + (secret ? " (secret keyring)" : ""));
