@@ -850,6 +850,7 @@ public class SendPanel extends JPanel {
         // Apply sign/enc enable state after all tabs are fully created
         setSignersEnabled(signCheckBox.isSelected());
         setEncLayersEnabled(encCheckBox.isSelected());
+        updateActiveEncLayer();
     }
 
     private void onEncrypt(ActionEvent e) {
