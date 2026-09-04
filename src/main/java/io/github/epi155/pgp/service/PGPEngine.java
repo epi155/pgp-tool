@@ -457,7 +457,17 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
         PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
         byte[] container = TarCodec.encode(tarArchive);
         try (OutputStream litOut = litGen.open(out, PGPLiteralData.BINARY, fileName, container.length, new Date())) {
-            litOut.write(container);
+            long offset = 0;
+            while (offset < container.length) {
+                int chunk = (int) Math.min(CHUNK_SIZE, container.length - offset);
+                for (PGPSignatureGenerator sigGen : sigGens) {
+                    sigGen.update(container, (int) offset, chunk);
+                }
+                litOut.write(container, (int) offset, chunk);
+                offset += chunk;
+                if (progress != null)
+                    progress.onProgress((int) (offset * 100 / container.length), "Signing...");
+            }
         }
         for (PGPSignatureGenerator sigGen : sigGens) {
             sigGen.generate().encode(out);
