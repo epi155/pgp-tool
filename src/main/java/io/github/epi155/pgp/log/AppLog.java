@@ -37,13 +37,6 @@ public final class AppLog {
         guiDisabled = disabled;
     }
 
-    public static void debugStderr(String msg) {
-        LOGGER.fine(msg);
-        if (guiDisabled) {
-            System.err.println("[DEBUG] " + msg);
-        }
-    }
-
     public static void error(String context, Throwable t) {
         if (t == null) {
             LOGGER.severe(context);

@@ -19,22 +19,15 @@ public class PGPTool {
 
         boolean privateExtensions = false;
         boolean curve448 = false;
-        boolean debug = false;
         List<String> filtered = new ArrayList<>();
         for (String arg : args) {
             if (arg.equals("-p") || arg.equals("--private")) {
                 privateExtensions = true;
             } else if (arg.equals("--curve448")) {
                 curve448 = true;
-            } else if (arg.equals("--debug")) {
-                debug = true;
             } else {
                 filtered.add(arg);
             }
-        }
-        if (debug) {
-            java.util.logging.Logger.getLogger(AppLog.LOGGER_NAME)
-                    .setLevel(java.util.logging.Level.ALL);
         }
         String[] rest = filtered.toArray(new String[0]);
 

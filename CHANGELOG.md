@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subpackets (both plain and tar paths)
 - One-pass `nested` flag is now `true` for all but the last signer (multi-signer
   messages per RFC 4880 §5.4)
+- `--output-dir` no longer dumps plaintext body to stdout when decrypting tar or
+  compound messages
+- GUI now shows `[Binary content — see attachment tree]` placeholder instead of
+  garbled text when the decrypted plaintext is binary
+- Signing and encryption key selection without `#id` now picks the last capable
+  subkey per master key (gpg convention) instead of all capable keys
 
 ## [1.0.1] - 2026-08-28
 
