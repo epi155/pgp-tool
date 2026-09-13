@@ -6,6 +6,7 @@ import io.github.epi155.pgp.model.DecryptResult;
 import io.github.epi155.pgp.model.TarArchive;
 import io.github.epi155.pgp.model.TarCodec;
 import io.github.epi155.pgp.model.DecryptResult;
+import io.github.epi155.pgp.log.AppLog;
 import org.bouncycastle.bcpg.*;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
@@ -326,6 +327,8 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                 sigGen.generateOnePassVersion(!isLast).encode(out);
                 sigGens.add(sigGen);
             }
+            AppLog.debugStderr("=== SIGN (writeSignAndLiteral) ===");
+            AppLog.debugStderr("  signers=" + sigGens.size() + " data.size=" + total + " fileName=" + fileName);
             PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
             try (OutputStream litOut = litGen.open(out, PGPLiteralData.BINARY,
                     fileName, total, new Date())) {
@@ -466,6 +469,17 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
 
         PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
         byte[] container = TarCodec.encode(tarArchive);
+        AppLog.debugStderr("=== SIGN (writeSignAndLiteralTar) ===");
+        AppLog.debugStderr("  signers=" + sigGens.size());
+        for (int j = 0; j < signKeys.size(); j++) {
+            PGPPublicKey pk = signKeys.get(j).getPublicKey();
+            int uh = (hashAlgorithms != null && j < hashAlgorithms.size())
+                    ? hashAlgorithms.get(j) : HashAlgorithmTags.SHA256;
+            AppLog.debugStderr("  signer[" + j + "]: keyId=0x" + String.format("%016X", signKeys.get(j).getKeyID())
+                    + " keyAlgo=" + pk.getAlgorithm()
+                    + " hashAlgo=" + defaultHashForAlgo(pk.getAlgorithm(), uh));
+        }
+        AppLog.debugStderr("  fileName=" + fileName + " container.size=" + container.length);
         try (OutputStream litOut = litGen.open(out, PGPLiteralData.BINARY, fileName, container.length, new Date())) {
             long offset = 0;
             while (offset < container.length) {
@@ -744,6 +758,13 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
 
         if (message instanceof PGPOnePassSignatureList) {
             PGPOnePassSignatureList opsList = (PGPOnePassSignatureList) message;
+            AppLog.debugStderr("=== VERIFY (parseCompressedToFile) ===");
+            AppLog.debugStderr("  OPS.count=" + opsList.size());
+            for (int j = 0; j < opsList.size(); j++) {
+                PGPOnePassSignature op = opsList.get(j);
+                AppLog.debugStderr("  OPS[" + j + "]: keyId=0x" + String.format("%016X", op.getKeyID())
+                        + " keyAlgo=" + op.getKeyAlgorithm() + " hashAlgo=" + op.getHashAlgorithm());
+            }
             // Read literal data (comes after OPS, before signatures)
             PGPLiteralData litData = (PGPLiteralData) plainFact.nextObject();
             if (litData == null) {
@@ -765,8 +786,17 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
             byte[] rawData = totalWritten <= 50_000_000
                     ? Files.readAllBytes(tempFile) : null;
             byte[] verifyData = rawData != null ? rawData : Files.readAllBytes(tempFile);
+            AppLog.debugStderr("  literal.totalWritten=" + totalWritten + " verifyData.size=" + verifyData.length);
             // Now read the trailing signature list
             PGPSignatureList sigList = (PGPSignatureList) plainFact.nextObject();
+            AppLog.debugStderr("  trailingSig.count=" + (sigList != null ? sigList.size() : 0));
+            if (sigList != null) {
+                for (int j = 0; j < sigList.size(); j++) {
+                    PGPSignature s = sigList.get(j);
+                    AppLog.debugStderr("  trailingSig[" + j + "]: keyId=0x" + String.format("%016X", s.getKeyID())
+                            + " hashAlgo=" + s.getHashAlgorithm() + " sigType=" + s.getSignatureType());
+                }
+            }
 
             // Build keyId → signature map (order may differ from OPS)
             Map<Long, PGPSignature> sigByKeyId = new HashMap<>();
@@ -822,9 +852,28 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                         }
                     } catch (Exception ignored) {}
 
+                    AppLog.debugStderr("  verifying: keyId=0x" + String.format("%016X", signerKeyId)
+                            + " OPS.keyAlgo=" + ops.getKeyAlgorithm() + " OPS.hashAlgo=" + ops.getHashAlgorithm()
+                            + " SIG.hashAlgo=" + sig.getHashAlgorithm()
+                            + " PUB.keyAlgo=" + pubKey.getAlgorithm()
+                            + " PUB.fp=" + fingerprintHex(pubKey.getFingerprint()));
                     ops.init(new Ed448PGPContentVerifierBuilderProvider(), pubKey);
                     ops.update(verifyData);
                     boolean verified = ops.verify(sig);
+                    AppLog.debugStderr("  verify.result=" + verified);
+                    if (!verified) {
+                        AppLog.debugStderr("  *** VERIFICATION FAILED ***");
+                        AppLog.debugStderr("    OPS keyAlgo=" + ops.getKeyAlgorithm()
+                                + " hashAlgo=" + ops.getHashAlgorithm());
+                        AppLog.debugStderr("    SIG keyId=0x" + String.format("%016X", sig.getKeyID())
+                                + " hashAlgo=" + sig.getHashAlgorithm()
+                                + " sigType=" + sig.getSignatureType()
+                                + " sigLen=" + sig.getSignature().length);
+                        AppLog.debugStderr("    PUB keyAlgo=" + pubKey.getAlgorithm()
+                                + " curve=" + KeyringLoader.curveName(pubKey)
+                                + " fp=" + fingerprintHex(pubKey.getFingerprint()));
+                        AppLog.debugStderr("    verifyData.size=" + verifyData.length);
+                    }
                     signerStatus = verified
                             ? DecryptResult.VerificationStatus.SIGNED_VERIFIED
                             : DecryptResult.VerificationStatus.SIGNED_INVALID;
@@ -950,6 +999,12 @@ TarArchive tarArchive = null;
             if (key.getKeyID() == keyId) return key;
         }
         return null;
+    }
+
+    private static String fingerprintHex(byte[] fp) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : fp) sb.append(String.format("%02X", b));
+        return sb.toString();
     }
 
     private PGPPublicKeyEncryptedData findEncDataById(PGPEncryptedDataList encList, long keyId) {

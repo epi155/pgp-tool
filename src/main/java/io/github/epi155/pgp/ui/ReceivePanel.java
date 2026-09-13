@@ -952,6 +952,29 @@ public class ReceivePanel extends JPanel {
         }
     }
 
+    private void setPlainTextOrPlaceholder(String text) {
+        if (text == null || text.isEmpty()) {
+            plainTextArea.setText("");
+        } else if (isLikelyBinary(text)) {
+            plainTextArea.setText("[Binary content — see attachment tree for extracted files]");
+        } else {
+            plainTextArea.setText(text);
+        }
+    }
+
+    private static boolean isLikelyBinary(String text) {
+        int len = text.length();
+        if (len == 0) return false;
+        int nonPrintable = 0;
+        for (int i = 0; i < len; i++) {
+            char c = text.charAt(i);
+            if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') nonPrintable++;
+            else if (c == 0xFFFD) nonPrintable++;
+            else if (c > 0x7F && Character.getType(c) == Character.CONTROL) nonPrintable++;
+        }
+        return nonPrintable * 20 > len;
+    }
+
     private void handleDecryptResult(DecryptResult result, boolean isBinary) {
         cleanupTempFiles();
         if (result.getTempFilePath() != null) {
@@ -970,7 +993,7 @@ public class ReceivePanel extends JPanel {
         boolean hasTar = lastTarArchive != null && lastTarArchive.hasAttachments();
         boolean hasCompound = lastCompound != null && !lastCompound.getAttachments().isEmpty();
         if (hasTar) {
-            plainTextArea.setText(result.getPlainText());
+            setPlainTextOrPlaceholder(result.getPlainText());
             EventQueue.invokeLater(() -> scrollToTop(plainTextArea));
             for (TarEntry entry : lastTarArchive.getFlatEntries()) {
                 addTarEntryToTree(entry);
@@ -978,7 +1001,7 @@ public class ReceivePanel extends JPanel {
             attachTreeModel.reload();
             exportTarButton.setEnabled(true);
         } else if (hasCompound) {
-            plainTextArea.setText(result.getPlainText());
+            setPlainTextOrPlaceholder(result.getPlainText());
             EventQueue.invokeLater(() -> scrollToTop(plainTextArea));
             for (CompoundMessage.Attachment att : lastCompound.getAttachments()) {
                 attachRoot.add(AttachmentNode.ofCompound(att));
@@ -1022,7 +1045,7 @@ public class ReceivePanel extends JPanel {
                 wrapBinaryAsAttachment(result, origName, tempPath, rawContent);
             }
         } else {
-            plainTextArea.setText(result.getPlainText());
+            setPlainTextOrPlaceholder(result.getPlainText());
             EventQueue.invokeLater(() -> scrollToTop(plainTextArea));
             saveAttachButton.setEnabled(false);
         }

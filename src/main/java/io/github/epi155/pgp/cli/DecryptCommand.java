@@ -184,7 +184,7 @@ public final class DecryptCommand {
                     }
                 }
                 String pt = result.getTarArchive().getPlainText();
-                if (pt != null && !pt.isEmpty()) {
+                if (output != null && pt != null && !pt.isEmpty()) {
                     writeText(pt, output, force);
                 }
             } else if (hasCompoundAttachments) {
@@ -201,7 +201,9 @@ public final class DecryptCommand {
                     att.saveTo(target);
                     if (!quiet) System.err.println("Attachment: " + target);
                 }
-                writeText(result.getCompoundMessage().getPlainText(), output, force);
+                if (output != null) {
+                    writeText(result.getCompoundMessage().getPlainText(), output, force);
+                }
             } else {
                 writeFileOutput(temp, output, force);
             }

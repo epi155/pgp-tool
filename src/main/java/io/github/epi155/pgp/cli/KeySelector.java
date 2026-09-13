@@ -59,11 +59,29 @@ public final class KeySelector {
             Set<Long> seen = new HashSet<>();
 
             if (source.ids.isEmpty()) {
-                for (PGPKeyInfo info : all) {
-                    if (!capable(info, requireEncrypt, requireSign)) continue;
-                    if (!usable(info)) continue;
-                    if (!seen.add(info.getKeyId())) continue;
-                    selected.add(info);
+                if (!requireEncrypt && !requireSign) {
+                    for (PGPKeyInfo info : all) {
+                        if (!usable(info)) continue;
+                        if (!seen.add(info.getKeyId())) continue;
+                        selected.add(info);
+                    }
+                } else {
+                    for (PGPKeyInfo master : bundle.getKeys()) {
+                        PGPKeyInfo picked = null;
+                        for (PGPKeyInfo sub : master.getSubKeys()) {
+                            if (!capable(sub, requireEncrypt, requireSign)) continue;
+                            if (!usable(sub)) continue;
+                            picked = sub;
+                        }
+                        if (picked == null
+                                && capable(master, requireEncrypt, requireSign)
+                                && usable(master)) {
+                            picked = master;
+                        }
+                        if (picked != null) {
+                            selected.add(picked);
+                        }
+                    }
                 }
                 if (selected.isEmpty()) {
                     throw new CliException("No usable " + capability(requireEncrypt, requireSign)
