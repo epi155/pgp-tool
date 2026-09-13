@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Key generation now emits Issuer Fingerprint (subpkt 33) in self-certifications,
+  subkey bindings and extra user-ID certifications, plus the Features/MDC flag
+  (subpkt 30) in self-certifications — keys import cleanly and signatures verify
+  in gpg, Kleopatra and Thunderbird
+- Document signatures now carry Issuer Key ID + Issuer Fingerprint unhashed
+  subpackets (both plain and tar paths)
+- One-pass `nested` flag is now `true` for all but the last signer (multi-signer
+  messages per RFC 4880 §5.4)
+
 ## [1.0.1] - 2026-08-28
 
 ### Added

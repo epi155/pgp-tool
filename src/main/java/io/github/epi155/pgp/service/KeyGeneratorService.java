@@ -6,6 +6,7 @@ import org.bouncycastle.bcpg.CompressionAlgorithmTags;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
+import org.bouncycastle.bcpg.sig.Features;
 import org.bouncycastle.bcpg.sig.KeyFlags;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.operator.PBESecretKeyDecryptor;
@@ -59,6 +60,8 @@ public class KeyGeneratorService {
         hashedGen.setPreferredCompressionAlgorithms(false, new int[]{
                 CompressionAlgorithmTags.ZLIB, CompressionAlgorithmTags.BZIP2,
                 CompressionAlgorithmTags.ZIP});
+        hashedGen.setIssuerFingerprint(false, masterKeyPair.getPublicKey());
+        hashedGen.setFeature(false, Features.FEATURE_MODIFICATION_DETECTION);
 
         int hashAlgo;
         if (masterAlgoTag == PublicKeyAlgorithmTags.EDDSA
@@ -120,6 +123,7 @@ public class KeyGeneratorService {
             subHashed.setKeyFlags(false, subFlags);
             long subExp = spec.getExpirationSeconds();
             if (subExp > 0) subHashed.setKeyExpirationTime(false, subExp);
+            subHashed.setIssuerFingerprint(false, masterKeyPair.getPublicKey());
 
             ringGen.addSubKey(subKeyPair, subHashed.generate(), null);
             subKeyPairs.add(subKeyPair);
@@ -132,6 +136,9 @@ public class KeyGeneratorService {
             PGPPublicKey masterPub = pubRing.getPublicKey();
             PGPSignatureGenerator sigGen = new PGPSignatureGenerator(signerBuilder);
             sigGen.init(PGPSignature.POSITIVE_CERTIFICATION, masterKeyPair.getPrivateKey());
+            PGPSignatureSubpacketGenerator uidHashed = new PGPSignatureSubpacketGenerator();
+            uidHashed.setIssuerFingerprint(false, masterKeyPair.getPublicKey());
+            sigGen.setHashedSubpackets(uidHashed.generate());
             for (int i = 1; i < userIds.size(); i++) {
                 PGPSignature cert = sigGen.generateCertification(userIds.get(i), masterPub);
                 masterPub = PGPPublicKey.addCertification(masterPub, userIds.get(i), cert);

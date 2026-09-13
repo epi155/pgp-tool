@@ -318,7 +318,12 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                 }
                 PGPSignatureGenerator sigGen = new PGPSignatureGenerator(csBuilder);
                 sigGen.init(PGPSignature.BINARY_DOCUMENT, signPrivateKey);
-                sigGen.generateOnePassVersion(false).encode(out);
+                PGPSignatureSubpacketGenerator unhashedGen = new PGPSignatureSubpacketGenerator();
+                unhashedGen.setIssuerKeyID(false, signKeys.get(i).getKeyID());
+                unhashedGen.setIssuerFingerprint(false, signPubKey);
+                sigGen.setUnhashedSubpackets(unhashedGen.generate());
+                boolean isLast = (i == signKeys.size() - 1);
+                sigGen.generateOnePassVersion(!isLast).encode(out);
                 sigGens.add(sigGen);
             }
             PGPLiteralDataGenerator litGen = new PGPLiteralDataGenerator();
@@ -449,7 +454,12 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                 PGPSignatureGenerator sigGen = new PGPSignatureGenerator(csBuilder);
                 sigGen.init(PGPSignature.BINARY_DOCUMENT, extractPrivateKey(signKeys.get(i),
                         signPassphrases != null && i < signPassphrases.size() ? signPassphrases.get(i) : null));
-                sigGen.generateOnePassVersion(false).encode(out);
+                PGPSignatureSubpacketGenerator unhashedGen = new PGPSignatureSubpacketGenerator();
+                unhashedGen.setIssuerKeyID(false, signKeys.get(i).getKeyID());
+                unhashedGen.setIssuerFingerprint(false, signPubKey);
+                sigGen.setUnhashedSubpackets(unhashedGen.generate());
+                boolean isLast = (i == signKeys.size() - 1);
+                sigGen.generateOnePassVersion(!isLast).encode(out);
                 sigGens.add(sigGen);
             }
         }
