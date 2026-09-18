@@ -9,10 +9,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -181,7 +179,7 @@ public class TarEntry {
     }
 
     public long getUserId() {
-        return entry.getUserId();
+        return entry.getLongUserId();
     }
 
     public void setUserId(long id) {
@@ -189,7 +187,7 @@ public class TarEntry {
     }
 
     public long getGroupId() {
-        return entry.getGroupId();
+        return entry.getLongGroupId();
     }
 
     public void setGroupId(long id) {

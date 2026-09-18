@@ -1,12 +1,6 @@
 package io.github.epi155.pgp.ui;
 
-import io.github.epi155.pgp.model.CompoundMessage;
-import io.github.epi155.pgp.model.DecryptResult;
-import io.github.epi155.pgp.model.KeyBundle;
-import io.github.epi155.pgp.model.PGPKeyInfo;
-import io.github.epi155.pgp.model.TarArchive;
-import io.github.epi155.pgp.model.TarEntry;
-import io.github.epi155.pgp.model.ZipCodec;
+import io.github.epi155.pgp.model.*;
 import io.github.epi155.pgp.service.KeyringLoader;
 import io.github.epi155.pgp.service.PGPEngine;
 import io.github.epi155.pgp.service.SecureTempFile;
@@ -17,7 +11,6 @@ import javax.swing.*;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import java.awt.*;
-import java.awt.Frame;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.Transferable;

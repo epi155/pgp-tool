@@ -1,7 +1,5 @@
 package io.github.epi155.pgp.ui;
 
-import io.github.epi155.pgp.model.CompoundCodec;
-import io.github.epi155.pgp.model.CompoundMessage;
 import io.github.epi155.pgp.model.KeyBundle;
 import io.github.epi155.pgp.model.PGPKeyInfo;
 import io.github.epi155.pgp.model.TarArchive;
@@ -14,11 +12,11 @@ import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPSecretKey;
 
 import javax.swing.*;
-import javax.swing.tree.DefaultTreeModel;
-import javax.swing.tree.TreePath;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
 import javax.swing.undo.UndoManager;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
@@ -1123,7 +1121,7 @@ public class SendPanel extends JPanel {
         final JComboBox<String> algoCombo;
         final CardLayout cardLayout;
         final JPanel cardsPanel;
-        final List<String> keyringPaths = new ArrayList<>();
+        final transient List<String> keyringPaths = new ArrayList<>();
 
         EncryptLayerPanel() {
             super(new BorderLayout(0, 2));
@@ -1298,9 +1296,9 @@ public class SendPanel extends JPanel {
             });
             setupEncLayerDrop(layer.keyPanel, layer);
             layer.keyPanel.getLoadButton().setTransferHandler(
-                UIUtils.createKeyringDropHandler(f -> layer.loadKeyring(f)));
+                UIUtils.createKeyringDropHandler(layer::loadKeyring));
             layer.keyPanel.getAddButton().setTransferHandler(
-                UIUtils.createKeyringDropHandler(f -> layer.addKeyring(f)));
+                UIUtils.createKeyringDropHandler(layer::addKeyring));
         } finally {
             suppressEncLayerTabListener--;
         }

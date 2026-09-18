@@ -1,10 +1,6 @@
 package io.github.epi155.pgp.cli;
 
-import io.github.epi155.pgp.model.DecryptResult;
-import io.github.epi155.pgp.model.PGPKeyInfo;
-import io.github.epi155.pgp.model.TarArchive;
-import io.github.epi155.pgp.model.TarCodec;
-import io.github.epi155.pgp.model.ZipCodec;
+import io.github.epi155.pgp.model.*;
 import io.github.epi155.pgp.service.PGPEngine;
 import io.github.epi155.pgp.service.PassphraseRequiredException;
 import io.github.epi155.pgp.service.SecureTempFile;

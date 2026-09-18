@@ -1,11 +1,6 @@
 package io.github.epi155.pgp.service;
 
-import io.github.epi155.pgp.model.CompoundCodec;
-import io.github.epi155.pgp.model.CompoundMessage;
-import io.github.epi155.pgp.model.DecryptResult;
-import io.github.epi155.pgp.model.TarArchive;
-import io.github.epi155.pgp.model.TarCodec;
-import io.github.epi155.pgp.model.DecryptResult;
+import io.github.epi155.pgp.model.*;
 import org.bouncycastle.bcpg.*;
 import org.bouncycastle.openpgp.*;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
@@ -18,7 +13,6 @@ import org.bouncycastle.openpgp.operator.bc.BcPGPDigestCalculatorProvider;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyKeyEncryptionMethodGenerator;
 import org.bouncycastle.openpgp.operator.jcajce.*;
-
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -848,11 +842,11 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                 if (probe != null && (CompoundCodec.isCompound(probe) || TarCodec.isCompound(probe))) {
                     try (InputStream decodeIn = tempFile.openRead()) {
                         if (TarCodec.isCompound(probe)) {
-                            TarArchive tar = TarCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                            TarArchive tar = TarCodec.decode(decodeIn, tempFile);
                             tarArchive = tar;
                             plainText = tar.getPlainText();
                         } else {
-                            compound = CompoundCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                            compound = CompoundCodec.decode(decodeIn, tempFile);
                             plainText = compound.getPlainText();
                         }
                     }
@@ -916,11 +910,11 @@ TarArchive tarArchive = null;
                 if (probe != null && (CompoundCodec.isCompound(probe) || TarCodec.isCompound(probe))) {
                     try (InputStream decodeIn = tempFile.openRead()) {
                         if (TarCodec.isCompound(probe)) {
-                            TarArchive tar = TarCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                            TarArchive tar = TarCodec.decode(decodeIn, tempFile);
                             tarArchive = tar;
                             plainText = tar.getPlainText();
                         } else {
-                            compound = CompoundCodec.decode(decodeIn, (int) totalWritten, tempFile);
+                            compound = CompoundCodec.decode(decodeIn, tempFile);
                             plainText = compound.getPlainText();
                         }
                     }

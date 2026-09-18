@@ -3,18 +3,9 @@ package io.github.epi155.pgp.model;
 import io.github.epi155.pgp.service.SecureTempFile;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 
 public class TarCodec {
 
@@ -74,7 +65,7 @@ public class TarCodec {
         dataOut.flush();
     }
 
-    public static TarArchive decode(InputStream in, int totalSize, SecureTempFile tempFile) throws IOException {
+    public static TarArchive decode(InputStream in, SecureTempFile tempFile) throws IOException {
         DataInputStream dataIn = new DataInputStream(in);
 
         byte[] magic = new byte[4];
@@ -101,7 +92,7 @@ public class TarCodec {
             fullBuf.write(version);
             byte[] rest = dataIn.readAllBytes();
             fullBuf.write(rest);
-            CompoundMessage compound = CompoundCodec.decode(new ByteArrayInputStream(fullBuf.toByteArray()), totalSize, tempFile);
+            CompoundMessage compound = CompoundCodec.decode(new ByteArrayInputStream(fullBuf.toByteArray()), tempFile);
             // Convert CompoundMessage to TarArchive
             return toTarArchive(compound);
         }
@@ -195,7 +186,7 @@ public class TarCodec {
         TarArchive archive = new TarArchive();
         try (TarArchiveInputStream tarIn = new TarArchiveInputStream(in)) {
             TarArchiveEntry entry;
-            while ((entry = tarIn.getNextTarEntry()) != null) {
+            while ((entry = tarIn.getNextEntry()) != null) {
                 if (entry.isDirectory()) {
                     continue;
                 }
@@ -215,8 +206,8 @@ public class TarCodec {
                     tarEntry.setMode(entry.getMode());
                     tarEntry.setUserName(entry.getUserName());
                     tarEntry.setGroupName(entry.getGroupName());
-                    tarEntry.setUserId(entry.getUserId());
-                    tarEntry.setGroupId(entry.getGroupId());
+                    tarEntry.setUserId(entry.getLongUserId());
+                    tarEntry.setGroupId(entry.getLongGroupId());
                     if (entry.getLinkName() != null && !entry.getLinkName().isEmpty()) {
                         tarEntry.setLinkName(entry.getLinkName());
                     }

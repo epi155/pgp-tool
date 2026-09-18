@@ -2,18 +2,20 @@ package io.github.epi155.pgp.model;
 
 import io.github.epi155.pgp.service.SecureTempFile;
 
-import java.io.*;
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 public class CompoundCodec {
+    private CompoundCodec() {}
 
     private static final byte[] MAGIC = {'P', 'G', 'P', 'C'};
     private static final byte TYPE_TEXT = 0;
-    private static final byte TYPE_BINARY = 1;
 
-    public static CompoundMessage decode(InputStream in, int totalSize, SecureTempFile tempFile) throws IOException {
+    public static CompoundMessage decode(InputStream in, SecureTempFile tempFile) throws IOException {
         DataInputStream dataIn = new DataInputStream(in);
 
         byte[] magic = new byte[4];
@@ -33,7 +35,7 @@ public class CompoundCodec {
         String plainText = null;
         List<CompoundMessage.Attachment> attachments = new ArrayList<>();
 
-        long cumulativeOffset = 4 + 1 + 4; // magic + version + numParts
+        long cumulativeOffset = 4L + 1 + 4; // magic + version + numParts
 
         for (int i = 0; i < numParts; i++) {
             int type = dataIn.readUnsignedByte();

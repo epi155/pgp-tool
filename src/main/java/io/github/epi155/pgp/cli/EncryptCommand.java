@@ -1,7 +1,5 @@
 package io.github.epi155.pgp.cli;
 
-import io.github.epi155.pgp.model.CompoundCodec;
-import io.github.epi155.pgp.model.CompoundMessage;
 import io.github.epi155.pgp.model.PGPKeyInfo;
 import io.github.epi155.pgp.model.TarArchive;
 import io.github.epi155.pgp.model.TarEntry;
@@ -13,8 +11,9 @@ import org.bouncycastle.openpgp.PGPSecretKey;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.nio.file.attribute.FileTime;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.util.*;
 
 public final class EncryptCommand {
