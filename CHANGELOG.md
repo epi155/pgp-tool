@@ -7,30 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Key generation now emits Issuer Fingerprint (subpkt 33) in self-certifications,
-  subkey bindings and extra user-ID certifications, plus the Features/MDC flag
-  (subpkt 30) in self-certifications — keys import cleanly and signatures verify
-  in gpg, Kleopatra and Thunderbird
-- Document signatures now carry Issuer Key ID + Issuer Fingerprint unhashed
-  subpackets (both plain and tar paths)
-- One-pass `nested` flag is now `true` for all but the last signer (multi-signer
-  messages per RFC 4880 §5.4)
-- `--output-dir` no longer dumps plaintext body to stdout when decrypting tar or
-  compound messages
-- GUI now shows `[Binary content — see attachment tree]` placeholder instead of
-  garbled text when the decrypted plaintext is binary
-- Signing and encryption key selection without `#id` now picks the last capable
-  subkey per master key (gpg convention) instead of all capable keys
-
-## [1.0.1] - 2026-08-28
-
 ### Added
 
-- **PAX tar format** for compound messages replacing custom PGPC v1/v2 format:
-  recursive directory support, POSIX file permissions, symlink support, and
-  full metadata preservation
+- **Session-encrypted temp files** (`SecureTempFile`): decrypted literal data and tar staging areas are encrypted with ChaCha20-Poly1305 under a random per-JVM session key — plaintext is never written to disk in clear; orphans from `kill -9` hold ciphertext only
+- **ZipCodec**: streaming TarArchive → ZIP export (DEFLATE) with POSIX permissions, mtime, owner/group and symlinks (Info-ZIP format)
+- CLI `--zip FILE` flag to save message attachments as a single ZIP archive (alternative to `--output-dir`)
+- GUI **"Export zip..."** button in ReceivePanel for tar archive ZIP export with progress
+- Large entry support: decoded tar entries >50 MB are staged per-entry into session-encrypted temp files and streamed during export/extraction with bounded memory
+- `TarCodec.toTarArchive(CompoundMessage)` converts legacy v1 compound attachments for the `--zip` path
+- **PAX tar format** for compound messages replacing custom PGPC v1/v2 format: recursive directory support, POSIX file permissions, symlink support, and full metadata preservation
 - `TarEntry`, `TarArchive`, `TarCodec` model classes for tar encode/decode
 - Symlink support in tar archives (linkFlag 0x32, mode 0120777)
 - POSIX file permissions preservation (644, 600, 755 etc.) during encrypt/decrypt
@@ -50,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- DecryptCommand streams raw bytes (`decodeText` always `false`); removed `--text`/`--binary` flags (CLI never decoded literal data as text)
+- `TarCodec.encode` stages plaintext tar through `SecureTempFile` instead of a plain temp file
+- `DecryptResult` exposes `getSecureTempFile()` instead of `getTempFilePath()` — temp staging is always session-encrypted
+- EncryptCommand: `Files.getLastModifiedTime` now uses `LinkOption.NOFOLLOW_LINKS` to avoid following symlinks during tar entry creation
 - Attachment tree is now the source of truth for tar structure (refactored SendPanel)
 - Relative paths shown in SendPanel attachment tree instead of absolute paths
 - `ReceivePanel.restoreOwnership()` collects and returns warnings instead of silently swallowing exceptions
@@ -61,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Key generation now emits Issuer Fingerprint (subpkt 33) in self-certifications, subkey bindings and extra user-ID certifications, plus the Features/MDC flag (subpkt 30) in self-certifications — keys import cleanly and signatures verify in gpg, Kleopatra and Thunderbird
+- Document signatures now carry Issuer Key ID + Issuer Fingerprint unhashed subpackets (both plain and tar paths)
+- One-pass `nested` flag is now `true` for all but the last signer (multi-signer messages per RFC 4880 §5.4)
+- `--output-dir` no longer dumps plaintext body to stdout when decrypting tar or compound messages
+- GUI now shows `[Binary content — see attachment tree]` placeholder instead of garbled text when the decrypted plaintext is binary
+- Signing and encryption key selection without `#id` now picks the last capable subkey per master key (gpg convention) instead of all capable keys
 - GUI popups in CLI batch mode: `AppLog.setGuiDisabled(true)` prevents `JOptionPane` dialogs in headless-like CLI dispatch
 - 777 permissions bug: `TarArchive.extractTo()` was calling `setLastModifiedTime` on symlinks which followed to non-existent targets, causing exceptions that prevented permission restoration on subsequent files
 - Exception cause destruction in `CliException`: all 19 wrapping sites now preserve the original exception cause instead of discarding it

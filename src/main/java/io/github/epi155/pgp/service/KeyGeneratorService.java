@@ -134,7 +134,7 @@ public class KeyGeneratorService {
 
         if (userIds.size() > 1) {
             PGPPublicKey masterPub = pubRing.getPublicKey();
-            PGPSignatureGenerator sigGen = new PGPSignatureGenerator(signerBuilder);
+            PGPSignatureGenerator sigGen = new PGPSignatureGenerator(signerBuilder, masterKeyPair.getPublicKey());
             sigGen.init(PGPSignature.POSITIVE_CERTIFICATION, masterKeyPair.getPrivateKey());
             PGPSignatureSubpacketGenerator uidHashed = new PGPSignatureSubpacketGenerator();
             uidHashed.setIssuerFingerprint(false, masterKeyPair.getPublicKey());

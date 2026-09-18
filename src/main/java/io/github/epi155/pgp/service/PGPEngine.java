@@ -308,7 +308,7 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                     csBuilder = new JcaPGPContentSignerBuilder(signPubKey.getAlgorithm(), effectiveHash)
                             .setProvider("BC");
                 }
-                PGPSignatureGenerator sigGen = new PGPSignatureGenerator(csBuilder);
+                PGPSignatureGenerator sigGen = new PGPSignatureGenerator(csBuilder, signPubKey);
                 sigGen.init(PGPSignature.BINARY_DOCUMENT, signPrivateKey);
                 PGPSignatureSubpacketGenerator unhashedGen = new PGPSignatureSubpacketGenerator();
                 unhashedGen.setIssuerKeyID(false, signKeys.get(i).getKeyID());
@@ -444,7 +444,7 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                     csBuilder = new JcaPGPContentSignerBuilder(signPubKey.getAlgorithm(), effectiveHash)
                             .setProvider("BC");
                 }
-                PGPSignatureGenerator sigGen = new PGPSignatureGenerator(csBuilder);
+                PGPSignatureGenerator sigGen = new PGPSignatureGenerator(csBuilder, signPubKey);
                 sigGen.init(PGPSignature.BINARY_DOCUMENT, extractPrivateKey(signKeys.get(i),
                         signPassphrases != null && i < signPassphrases.size() ? signPassphrases.get(i) : null));
                 PGPSignatureSubpacketGenerator unhashedGen = new PGPSignatureSubpacketGenerator();
