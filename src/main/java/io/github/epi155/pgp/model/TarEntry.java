@@ -1,5 +1,6 @@
 package io.github.epi155.pgp.model;
 
+import io.github.epi155.pgp.service.SecureTempFile;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 
 import java.io.ByteArrayInputStream;
@@ -22,6 +23,10 @@ public class TarEntry {
     private final List<TarEntry> children = new ArrayList<>();
     private TarEntry parent;
     private Path sourcePath;
+    /** Session-encrypted backing store for large content (slice reads stay off-heap). */
+    private SecureTempFile secureTemp;
+    private long secureOffset;
+    private long secureLength;
 
     public TarEntry(String name) {
         this.entry = new TarArchiveEntry(name);
@@ -36,6 +41,18 @@ public class TarEntry {
 
     public TarEntry(TarArchiveEntry entry) {
         this.entry = entry;
+    }
+
+    /**
+     * Entry whose content lives in a session-encrypted temp file
+     * ({@code [offset, offset + length)} in its plaintext space).
+     * The entry does NOT own the temp: the owning {@link TarArchive} wipes it on dispose.
+     */
+    public TarEntry(TarArchiveEntry entry, SecureTempFile secureTemp, long offset, long length) {
+        this.entry = entry;
+        this.secureTemp = secureTemp;
+        this.secureOffset = offset;
+        this.secureLength = length;
     }
 
     private byte[] cachedContent;
@@ -230,6 +247,9 @@ public class TarEntry {
         if (cachedContent != null) {
             return new ByteArrayInputStream(cachedContent);
         }
+        if (secureTemp != null) {
+            return secureTemp.openSliceRead(secureOffset, secureLength);
+        }
         if (sourcePath != null && Files.exists(sourcePath)) {
             return Files.newInputStream(sourcePath);
         }
@@ -240,6 +260,9 @@ public class TarEntry {
         if (cachedContent != null) {
             return cachedContent;
         }
+        if (secureTemp != null) {
+            return secureTemp.readSlice(secureOffset, secureLength);
+        }
         if (sourcePath != null && Files.exists(sourcePath)) {
             return Files.readAllBytes(sourcePath);
         }
@@ -249,6 +272,14 @@ public class TarEntry {
     public void writeTo(OutputStream out) throws IOException {
         if (cachedContent != null) {
             out.write(cachedContent);
+        } else if (secureTemp != null) {
+            try (InputStream in = secureTemp.openSliceRead(secureOffset, secureLength)) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) >= 0) {
+                    out.write(buf, 0, n);
+                }
+            }
         } else if (sourcePath != null && Files.exists(sourcePath)) {
             Files.copy(sourcePath, out);
         }

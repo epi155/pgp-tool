@@ -140,7 +140,8 @@ public final class EncryptCommand {
                             if (Files.isRegularFile(entry) || Files.isSymbolicLink(entry)) {
                                 String rel = single.getFileName().resolve(single.relativize(entry)).toString();
                                 TarEntry te = TarEntry.fromPath(entry, rel);
-                                te.setModificationTime(Files.getLastModifiedTime(entry).toMillis());
+                                te.setModificationTime(Files.getLastModifiedTime(entry,
+                                        LinkOption.NOFOLLOW_LINKS).toMillis());
                                 tarData.addEntry(te);
                             }
                         }
@@ -163,14 +164,16 @@ public final class EncryptCommand {
                                 if (Files.isRegularFile(entry) || Files.isSymbolicLink(entry)) {
                                     String rel = base.resolve(p.relativize(entry)).toString();
                                     TarEntry te = TarEntry.fromPath(entry, rel);
-                                    te.setModificationTime(Files.getLastModifiedTime(entry).toMillis());
+                                    te.setModificationTime(Files.getLastModifiedTime(entry,
+                                            LinkOption.NOFOLLOW_LINKS).toMillis());
                                     tarData.addEntry(te);
                                 }
                             }
                         }
                     } else if (Files.isRegularFile(p)) {
                         TarEntry te = TarEntry.fromPath(p, p.getFileName().toString());
-                        te.setModificationTime(Files.getLastModifiedTime(p).toMillis());
+                        te.setModificationTime(Files.getLastModifiedTime(p,
+                                LinkOption.NOFOLLOW_LINKS).toMillis());
                         tarData.addEntry(te);
                     } else {
                         throw new CliException(f + ": no such file", true);

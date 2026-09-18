@@ -33,6 +33,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -635,7 +636,8 @@ public class SendPanel extends JPanel {
                 File f = child.getFile();
                 String tarPath = getTarPath(child);
                 TarEntry te = TarEntry.fromPath(f.toPath(), tarPath);
-                long mtime = Files.getLastModifiedTime(f.toPath()).toMillis();
+                long mtime = Files.getLastModifiedTime(f.toPath(),
+                        LinkOption.NOFOLLOW_LINKS).toMillis();
                 te.setModificationTime(mtime);
                 tarData.addEntry(te);
             } else if (child.isDirectory()) {

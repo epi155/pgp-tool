@@ -165,6 +165,27 @@ Wire format per chunk (64 KiB, encoded size 10) — `AeadEncryptingStream`/`Aead
   (same caveat as the custom AEAD ciphers). Compression level is fixed (XZ default preset 6);
   a `--compress-level` knob would be a future extension.
 
+## Session-encrypted temp files (`service/SecureTempFile`)
+
+Decrypted literal data and tar staging areas are **never written in clear to disk**.
+`SecureTempFile` encrypts every temp with **ChaCha20-Poly1305** (JCE, JDK 11+) under a
+random 256-bit **session key generated once per JVM launch** (heap-only, zeroed by a
+shutdown hook). Each file gets its own random 96-bit base nonce (clear header);
+per-chunk nonce = `base XOR chunkIndex`, 64 KiB plaintext chunks + 16 B Poly1305 tag
+each (per-chunk integrity, random-access slice reads, plaintext-offset semantics so
+recorded attachment offsets stay valid).
+
+- Private dir `pgp-tool-secure-*` under `java.io.tmpdir`, `0700`; files `0600`
+  (POSIX enforced, best-effort elsewhere). `wipeAndDelete()` zero-passes the
+  ciphertext before unlinking; `deleteOnExit` + shutdown-hook cleanup as backstop.
+- Orphans from `kill -9` hold **ciphertext only** (unreadable: the session key died
+  with the JVM) and dirs older than 24h are swept on next temp creation.
+- Users: `PGPEngine` decrypt staging (`pgp-nested-decrypt-*.bin`, owned by the
+  `DecryptResult` until GUI `cleanupTempFiles()` / CLI `finally`), `TarCodec`
+  encode/decode staging (`tar-*.tar`, wiped in `finally`).
+- `InputStream.read()` may return short reads from the decrypting stream — always
+  loop (`TarCodec.readFully`) instead of assuming full buffers.
+
 ## UI state persistence
 
 - Window position/size and per-tab preferences via `java.util.prefs.Preferences` (derived from `MainFrame.class`'s package, `io.github.epi155.pgp`)
@@ -212,8 +233,22 @@ New encryption produces PAX tar archives (`LONGFILE_POSIX`) with full metadata p
   including symlinks (via `Files.createSymbolicLink`) and POSIX permissions (via
   `Files.setPosixFilePermissions`). `getFlatEntries()` returns all entries in tree order.
 - **TarCodec**: encode/decode between `TarArchive` and byte stream. `encode(TarArchive, OutputStream)`
-  uses a temp file for streaming (reduces peak memory). `decode()` handles v3 tar format and falls
-  back to v1 `CompoundCodec` for backward compatibility.
+  stages through a session-encrypted `SecureTempFile` (plaintext tar never hits disk in clear). `decode()` handles v3 tar format and falls
+  back to v1 `CompoundCodec` for backward compatibility. `toTarArchive(CompoundMessage)` converts legacy
+  attachments for the `--zip` path.
+- **ZipCodec** (`model/ZipCodec.convert`, DEFLATE default): streaming `TarArchive` → ZIP used by
+  Receive `Export zip...` and CLI `--decrypt --zip`. Per entry: full path, POSIX mode, mtime,
+  numeric uid/gid via `AsiExtraField` (best-effort; user/group *names* have no portable ZIP field),
+  symlinks as Info-ZIP links (target bytes + `S_IFLNK`, STORED with precomputed CRC — STORED entries
+  require upfront CRC when streaming). Dirs STORED size 0/crc 0. UTF-8 names + language flag.
+  Large entries stream from session-encrypted staging (see below), never heap-materialized.
+- **Large entries**: decoded tar entries >50 MB are staged per-entry into their own `SecureTempFile`
+  (`TarCodec.decodeTar`) and referenced as `TarEntry(secureTemp, offset, length)` slices, so tar/zip
+  export and `--output-dir` extraction stream them with bounded memory. The staging files are owned by
+  the `TarArchive` (`addStagingTemp`/`dispose()`; GUI disposes on next decrypt/clear, CLI in `finally`).
+  `extractTo()` warns instead of silently writing empty files when an entry has no readable content.
+- **Large literals**: decrypted content >50 MB stays off-heap (`rawData == null`); compound detection
+  then uses a 4-byte slice probe (`PGPEngine.compoundProbe`) so tar/zip export still works streaming.
 - **PGPEngine**: `writeSignAndLiteralTar()` encodes the tar to bytes and writes a signed+literal
   data packet. Single attachment without directories produces a gpg-compatible literal data packet;
   multiple attachments or directories produce tar v3.
@@ -235,8 +270,8 @@ New encryption produces PAX tar archives (`LONGFILE_POSIX`) with full metadata p
   from the filesystem — always returns default 0100644; must use `PosixFileAttributes` explicitly
 - **Permission fix**: `setLastModifiedTime` follows symlinks; if the symlink target doesn't exist yet
   (flat extraction order), it throws `NoSuchFileException` — must skip mtime set for symlinks
-- `TarCodec.encode(TarArchive)` (byte[] overload) still buffers in memory; the streaming overload
-  `encode(TarArchive, OutputStream)` uses a temp file
+- `TarCodec.encode(TarArchive)` (byte[] overload) still buffers in memory; both overloads
+  stage the plaintext tar through a session-encrypted `SecureTempFile`
 
 ## Common pitfalls
 

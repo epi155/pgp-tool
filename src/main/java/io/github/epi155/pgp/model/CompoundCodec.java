@@ -1,8 +1,9 @@
 package io.github.epi155.pgp.model;
 
+import io.github.epi155.pgp.service.SecureTempFile;
+
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -12,7 +13,7 @@ public class CompoundCodec {
     private static final byte TYPE_TEXT = 0;
     private static final byte TYPE_BINARY = 1;
 
-    public static CompoundMessage decode(InputStream in, int totalSize, Path tempFile) throws IOException {
+    public static CompoundMessage decode(InputStream in, int totalSize, SecureTempFile tempFile) throws IOException {
         DataInputStream dataIn = new DataInputStream(in);
 
         byte[] magic = new byte[4];

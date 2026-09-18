@@ -144,7 +144,9 @@ java -jar pgp-tool.jar -d -i report.gpg -o report.txt \
   (outermost layer first).
 - `--verify-key FILE` (repeatable) verifies signatures; the signer is matched from the
   signature itself. Exit status is `1` if any signature fails verification.
-- `--output-dir DIR` saves message attachments; `--text` (default) / `--binary`.
+- `--output-dir DIR` saves message attachments; `--zip FILE` saves them as one ZIP.
+  Plain messages (or single files) go to stdout by default, or to `-o FILE` — always
+  as raw bytes, text or binary alike.
 
 ## Notes on key selection
 

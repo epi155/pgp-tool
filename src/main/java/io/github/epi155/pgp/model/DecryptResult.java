@@ -1,5 +1,6 @@
 package io.github.epi155.pgp.model;
 
+import io.github.epi155.pgp.service.SecureTempFile;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 
 import java.text.SimpleDateFormat;
@@ -100,7 +101,8 @@ public class DecryptResult {
     private final Metadata metadata;
     private final CompoundMessage compoundMessage;
     private final TarArchive tarArchive;
-    private final java.nio.file.Path tempFilePath;
+    /** Session-encrypted staging of the decrypted literal data (never plaintext on disk). */
+    private final SecureTempFile secureTemp;
 
     public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
                          List<SignerInfo> signers,
@@ -110,8 +112,8 @@ public class DecryptResult {
 
     public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
                          List<SignerInfo> signers,
-                         Metadata metadata, CompoundMessage compoundMessage, java.nio.file.Path tempFilePath) {
-        this(plainText, rawContent, verificationStatus, signers, metadata, compoundMessage, null, tempFilePath);
+                         Metadata metadata, CompoundMessage compoundMessage, SecureTempFile secureTemp) {
+        this(plainText, rawContent, verificationStatus, signers, metadata, compoundMessage, null, secureTemp);
     }
 
     public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
@@ -122,13 +124,13 @@ public class DecryptResult {
 
     public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
                          List<SignerInfo> signers,
-                         Metadata metadata, TarArchive tarArchive, java.nio.file.Path tempFilePath) {
-        this(plainText, rawContent, verificationStatus, signers, metadata, null, tarArchive, tempFilePath);
+                         Metadata metadata, TarArchive tarArchive, SecureTempFile secureTemp) {
+        this(plainText, rawContent, verificationStatus, signers, metadata, null, tarArchive, secureTemp);
     }
 
     public DecryptResult(String plainText, byte[] rawContent, VerificationStatus verificationStatus,
                          List<SignerInfo> signers,
-                         Metadata metadata, CompoundMessage compoundMessage, TarArchive tarArchive, java.nio.file.Path tempFilePath) {
+                         Metadata metadata, CompoundMessage compoundMessage, TarArchive tarArchive, SecureTempFile secureTemp) {
         this.plainText = plainText;
         this.rawContent = rawContent;
         this.verificationStatus = verificationStatus;
@@ -136,12 +138,12 @@ public class DecryptResult {
         this.metadata = metadata;
         this.compoundMessage = compoundMessage;
         this.tarArchive = tarArchive;
-        this.tempFilePath = tempFilePath;
+        this.secureTemp = secureTemp;
     }
 
     public String getPlainText() { return plainText; }
     public byte[] getRawContent() { return rawContent != null ? rawContent : readTempContent(); }
-    public java.nio.file.Path getTempFilePath() { return tempFilePath; }
+    public SecureTempFile getSecureTempFile() { return secureTemp; }
     public VerificationStatus getVerificationStatus() { return verificationStatus; }
     public Long getSignerKeyId() {
         return signers.isEmpty() ? null : signers.get(0).getKeyId();
@@ -158,9 +160,9 @@ public class DecryptResult {
     }
 
     private byte[] readTempContent() {
-        if (tempFilePath != null) {
+        if (secureTemp != null) {
             try {
-                return java.nio.file.Files.readAllBytes(tempFilePath);
+                return secureTemp.readAllPlaintext();
             } catch (java.io.IOException ignored) {}
         }
         return null;

@@ -1,5 +1,6 @@
 package io.github.epi155.pgp.model;
 
+import io.github.epi155.pgp.service.SecureTempFile;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
@@ -12,9 +13,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -47,13 +45,14 @@ public class TarCodec {
         dataOut.write(textBytes);
 
         if (archive.hasAttachments()) {
-            Path tempFile = Files.createTempFile("tar-", ".tar");
+            // The tar staging area holds plaintext: keep it session-encrypted on disk.
+            SecureTempFile tempFile = SecureTempFile.create("tar-", ".tar");
             try {
                 long tarSize;
-                try (OutputStream tarOut = Files.newOutputStream(tempFile)) {
+                try (OutputStream tarOut = tempFile.openWrite()) {
                     archive.writeTo(tarOut);
                 }
-                tarSize = Files.size(tempFile);
+                tarSize = tempFile.plaintextSize();
 
                 byte[] nameBytes = archive.getTarFileName().getBytes(StandardCharsets.UTF_8);
                 dataOut.writeByte(1);
@@ -61,21 +60,21 @@ public class TarCodec {
                 dataOut.write(nameBytes);
                 dataOut.writeLong(tarSize);
                 byte[] buf = new byte[8192];
-                try (InputStream tarIn = Files.newInputStream(tempFile)) {
+                try (InputStream tarIn = tempFile.openRead()) {
                     int n;
                     while ((n = tarIn.read(buf)) >= 0) {
                         dataOut.write(buf, 0, n);
                     }
                 }
             } finally {
-                Files.deleteIfExists(tempFile);
+                tempFile.wipeAndDelete();
             }
         }
 
         dataOut.flush();
     }
 
-    public static TarArchive decode(InputStream in, int totalSize, Path tempFile) throws IOException {
+    public static TarArchive decode(InputStream in, int totalSize, SecureTempFile tempFile) throws IOException {
         DataInputStream dataIn = new DataInputStream(in);
 
         byte[] magic = new byte[4];
@@ -104,13 +103,7 @@ public class TarCodec {
             fullBuf.write(rest);
             CompoundMessage compound = CompoundCodec.decode(new ByteArrayInputStream(fullBuf.toByteArray()), totalSize, tempFile);
             // Convert CompoundMessage to TarArchive
-            TarArchive archive = new TarArchive();
-            archive.setPlainText(compound.getPlainText());
-            for (CompoundMessage.Attachment att : compound.getAttachments()) {
-                TarEntry entry = new TarEntry(att.getFilename(), att.getContent(), att.getModificationTime());
-                archive.addEntry(entry);
-            }
-            return archive;
+            return toTarArchive(compound);
         }
 
         // v3: tar format
@@ -141,9 +134,9 @@ public class TarCodec {
             } else {
                 // Binary part - should be tar archive
                 if (tempFile != null) {
-                    // Write tar content to temp file for streaming decode
-                    Path tarTempFile = Files.createTempFile("tar-", ".tar");
-                    try (OutputStream tarOut = Files.newOutputStream(tarTempFile)) {
+                    // Stage tar content session-encrypted for streaming decode
+                    SecureTempFile tarTempFile = SecureTempFile.create("tar-", ".tar");
+                    try (OutputStream tarOut = tarTempFile.openWrite()) {
                         byte[] buf = new byte[8192];
                         long remaining = contentLen;
                         while (remaining > 0) {
@@ -155,11 +148,11 @@ public class TarCodec {
                         }
                     }
 
-                    // Decode tar from temp file
-                    try (InputStream tarIn = Files.newInputStream(tarTempFile)) {
+                    // Decode tar from the encrypted staging file
+                    try (InputStream tarIn = tarTempFile.openRead()) {
                         archive = decodeTar(tarIn);
                     } finally {
-                        Files.deleteIfExists(tarTempFile);
+                        tarTempFile.wipeAndDelete();
                     }
                 } else {
                     byte[] tarBytes = new byte[contentLenInt];
@@ -176,6 +169,28 @@ public class TarCodec {
         return archive;
     }
 
+    /** Converts a legacy v1 compound message to a tar archive (one entry per attachment). */
+    public static TarArchive toTarArchive(CompoundMessage compound) {
+        TarArchive archive = new TarArchive();
+        archive.setPlainText(compound.getPlainText());
+        for (CompoundMessage.Attachment att : compound.getAttachments()) {
+            if (att.getTempFile() != null) {
+                // Slice-backed: no heap materialization, offsets are plaintext-space.
+                long len = att.getLength() >= 0
+                        ? att.getLength() : att.getTempFile().plaintextSize() - att.getOffset();
+                TarArchiveEntry raw = new TarArchiveEntry(att.getFilename());
+                raw.setSize(len);
+                TarEntry entry = new TarEntry(raw, att.getTempFile(), att.getOffset(), len);
+                entry.setModificationTime(att.getModificationTime());
+                archive.addEntry(entry);
+            } else {
+                TarEntry entry = new TarEntry(att.getFilename(), att.getContent(), att.getModificationTime());
+                archive.addEntry(entry);
+            }
+        }
+        return archive;
+    }
+
     private static TarArchive decodeTar(InputStream in) throws IOException {
         TarArchive archive = new TarArchive();
         try (TarArchiveInputStream tarIn = new TarArchiveInputStream(in)) {
@@ -187,7 +202,7 @@ public class TarCodec {
                 long size = entry.getSize();
                 if (entry.isSymbolicLink()) {
                     byte[] content = new byte[(int) size];
-                    tarIn.read(content);
+                    readFully(tarIn, content, entry.getName());
                     String linkTarget = new String(content, StandardCharsets.UTF_8);
                     TarEntry tarEntry = new TarEntry(entry);
                     tarEntry.setLinkName(linkTarget);
@@ -195,10 +210,7 @@ public class TarCodec {
                     archive.addEntry(tarEntry);
                 } else if (size <= 50_000_000) {
                     byte[] content = new byte[(int) size];
-                    int read = tarIn.read(content);
-                    if (read != size) {
-                        throw new IOException("Incomplete read for entry: " + entry.getName());
-                    }
+                    readFully(tarIn, content, entry.getName());
                     TarEntry tarEntry = new TarEntry(entry.getName(), content, entry.getModTime().getTime());
                     tarEntry.setMode(entry.getMode());
                     tarEntry.setUserName(entry.getUserName());
@@ -210,15 +222,47 @@ public class TarCodec {
                     }
                     archive.addEntry(tarEntry);
                 } else {
-                    TarEntry tarEntry = new TarEntry(entry);
+                    // Large entry: stage it session-encrypted instead of materializing
+                    // it in heap, and reference it as a slice (memory stays bounded).
+                    SecureTempFile staging = SecureTempFile.create("tar-big-", ".bin");
+                    try (OutputStream entryOut = staging.openWrite()) {
+                        byte[] buf = new byte[8192];
+                        long remaining = size;
+                        while (remaining > 0) {
+                            int toRead = (int) Math.min(buf.length, remaining);
+                            int n = tarIn.read(buf, 0, toRead);
+                            if (n < 0) {
+                                throw new IOException("Incomplete read for entry: " + entry.getName());
+                            }
+                            entryOut.write(buf, 0, n);
+                            remaining -= n;
+                        }
+                    } catch (IOException | RuntimeException e) {
+                        staging.wipeAndDelete();
+                        throw e;
+                    }
+                    TarEntry tarEntry = new TarEntry(entry, staging, 0, staging.plaintextSize());
                     if (entry.getLinkName() != null && !entry.getLinkName().isEmpty()) {
                         tarEntry.setLinkName(entry.getLinkName());
                     }
                     archive.addEntry(tarEntry);
+                    archive.addStagingTemp(staging);
                 }
             }
         }
         return archive;
+    }
+
+    /** InputStream.read may return short reads; loop until the buffer is full. */
+    private static void readFully(InputStream in, byte[] buf, String entryName) throws IOException {
+        int off = 0;
+        while (off < buf.length) {
+            int n = in.read(buf, off, buf.length - off);
+            if (n < 0) {
+                throw new IOException("Incomplete read for entry: " + entryName);
+            }
+            off += n;
+        }
     }
 
     public static boolean isCompound(byte[] data) {

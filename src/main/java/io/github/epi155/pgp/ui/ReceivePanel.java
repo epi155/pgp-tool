@@ -6,8 +6,10 @@ import io.github.epi155.pgp.model.KeyBundle;
 import io.github.epi155.pgp.model.PGPKeyInfo;
 import io.github.epi155.pgp.model.TarArchive;
 import io.github.epi155.pgp.model.TarEntry;
+import io.github.epi155.pgp.model.ZipCodec;
 import io.github.epi155.pgp.service.KeyringLoader;
 import io.github.epi155.pgp.service.PGPEngine;
+import io.github.epi155.pgp.service.SecureTempFile;
 import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPSecretKey;
 
@@ -53,6 +55,7 @@ public class ReceivePanel extends JPanel {
     private final AttachmentNode attachRoot;
     private final JButton saveAttachButton;
     private final JButton exportTarButton;
+    private final JButton exportZipButton;
     private final JLabel statusLabel;
 
     private transient KeyBundle publicKeyBundle;
@@ -60,7 +63,7 @@ public class ReceivePanel extends JPanel {
     private byte[] cipherBytes;
     private CompoundMessage lastCompound;
     private TarArchive lastTarArchive;
-    private final java.util.List<java.nio.file.Path> tempFiles = new java.util.ArrayList<>();
+    private final java.util.List<SecureTempFile> tempFiles = new java.util.ArrayList<>();
     private final java.util.List<String> publicKeyringPaths = new java.util.ArrayList<>();
     private final java.util.List<String> privateKeyringPaths = new java.util.ArrayList<>();
 
@@ -241,6 +244,8 @@ public class ReceivePanel extends JPanel {
         saveAttachButton.setEnabled(false);
         exportTarButton = new JButton("Export tar...");
         exportTarButton.setEnabled(false);
+        exportZipButton = new JButton("Export zip...");
+        exportZipButton.setEnabled(false);
         attachTree.addTreeSelectionListener(e ->
                 saveAttachButton.setEnabled(attachTree.getSelectionCount() > 0));
 
@@ -276,6 +281,7 @@ public class ReceivePanel extends JPanel {
         JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
         btnRow.add(saveAttachButton);
         btnRow.add(exportTarButton);
+        btnRow.add(exportZipButton);
         fileSouth.add(btnRow, BorderLayout.WEST);
         statusLabel = new JLabel(" ");
         statusLabel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
@@ -356,6 +362,7 @@ public class ReceivePanel extends JPanel {
         decryptButton.addActionListener(this::onDecrypt);
         saveAttachButton.addActionListener(this::saveAttachment);
         exportTarButton.addActionListener(e -> exportTar());
+        exportZipButton.addActionListener(e -> exportZip());
         showUsedBtn.addActionListener(e -> {
             if (showUsedBtn.isSelected()) {
                 if (!privateKeyPanel.getSelectedKeys().isEmpty())
@@ -544,12 +551,14 @@ public class ReceivePanel extends JPanel {
     }
 
     private void clearDecryptResults() {
+        disposeLastArchive();
         lastCompound = null;
         lastTarArchive = null;
         attachRoot.removeAllChildren();
         attachTreeModel.reload();
         saveAttachButton.setEnabled(false);
         exportTarButton.setEnabled(false);
+        exportZipButton.setEnabled(false);
         verificationArea.setText("");
         encryptionMetadataArea.setText("");
         cleanupTempFiles();
@@ -779,6 +788,49 @@ public class ReceivePanel extends JPanel {
         }
     }
 
+    private void exportZip() {
+        if (lastTarArchive == null) return;
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Export Zip Archive");
+        fc.setSelectedFile(new File(lastTarArchive.getBaseName() + ".zip"));
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        Path target = fc.getSelectedFile().toPath();
+        if (!target.toString().endsWith(".zip")) {
+            target = target.resolveSibling(target.getFileName() + ".zip");
+        }
+        // Compression can take a while: run off the EDT with progress.
+        Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
+        ProgressDialog progress = new ProgressDialog(owner, "Exporting zip...");
+        final TarArchive archive = lastTarArchive;
+        final Path dest = target;
+        final long total = Math.max(archive.getTotalSize(), 1);
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                try (java.io.OutputStream out = Files.newOutputStream(dest)) {
+                    ZipCodec.convert(archive, out, written ->
+                            progress.onProgress((int) Math.min(written * 100 / total, 100),
+                                    "Exporting zip..."));
+                }
+                return null;
+            }
+            @Override
+            protected void done() {
+                progress.dispose();
+                try {
+                    get();
+                    setStatus("Exported to " + dest.getFileName());
+                } catch (Exception ex) {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    UIUtils.showError(ReceivePanel.this,
+                            "Error exporting zip:\n" + cause.getMessage(), cause);
+                }
+            }
+        };
+        worker.execute();
+        progress.setVisible(true);
+    }
+
     private void updateShowUsedButton() {
         boolean active = privateKeyPanel.isSelectedViewActive() || publicKeyPanel.isSelectedViewActive();
         showUsedBtn.setSelected(active);
@@ -977,8 +1029,9 @@ public class ReceivePanel extends JPanel {
 
     private void handleDecryptResult(DecryptResult result, boolean isBinary) {
         cleanupTempFiles();
-        if (result.getTempFilePath() != null) {
-            tempFiles.add(result.getTempFilePath());
+        disposeLastArchive();
+        if (result.getSecureTempFile() != null) {
+            tempFiles.add(result.getSecureTempFile());
         }
         verificationArea.setText(result.getVerificationDetail());
         EventQueue.invokeLater(() -> scrollToTop(verificationArea));
@@ -1000,6 +1053,7 @@ public class ReceivePanel extends JPanel {
             }
             attachTreeModel.reload();
             exportTarButton.setEnabled(true);
+            exportZipButton.setEnabled(true);
         } else if (hasCompound) {
             setPlainTextOrPlaceholder(result.getPlainText());
             EventQueue.invokeLater(() -> scrollToTop(plainTextArea));
@@ -1019,7 +1073,7 @@ public class ReceivePanel extends JPanel {
                 }
             }
             if (origName == null || origName.isEmpty()) origName = "cipher.dec";
-            java.nio.file.Path tempPath = result.getTempFilePath();
+            SecureTempFile secureTemp = result.getSecureTempFile();
             byte[] rawContent = result.getRawContent();
 
             JFileChooser fc = new JFileChooser();
@@ -1027,9 +1081,8 @@ public class ReceivePanel extends JPanel {
             if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
                 java.nio.file.Path dest = fc.getSelectedFile().toPath();
                 try {
-                    if (tempPath != null) {
-                        java.nio.file.Files.copy(tempPath, dest,
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    if (secureTemp != null) {
+                        secureTemp.copyDecryptedTo(dest);
                     } else if (rawContent != null) {
                         java.nio.file.Files.write(dest, rawContent);
                     }
@@ -1038,11 +1091,11 @@ public class ReceivePanel extends JPanel {
                 } catch (Exception ex) {
                     UIUtils.showError(this, "Error saving file:\n" + ex.getMessage(), ex);
                     plainTextArea.setText("[Error saving file. Use 'Save attachment' to retry.]");
-                    wrapBinaryAsAttachment(result, origName, tempPath, rawContent);
+                    wrapBinaryAsAttachment(result, origName, secureTemp, rawContent);
                 }
             } else {
                 plainTextArea.setText("[Decrypted file not saved. Use the 'Save attachment' button to save it.]");
-                wrapBinaryAsAttachment(result, origName, tempPath, rawContent);
+                wrapBinaryAsAttachment(result, origName, secureTemp, rawContent);
             }
         } else {
             setPlainTextOrPlaceholder(result.getPlainText());
@@ -1085,10 +1138,10 @@ public class ReceivePanel extends JPanel {
     }
 
     private void wrapBinaryAsAttachment(DecryptResult result, String origName,
-                                         java.nio.file.Path tempPath, byte[] rawContent) {
-        if (tempPath != null) {
+                                          SecureTempFile secureTemp, byte[] rawContent) {
+        if (secureTemp != null) {
             lastCompound = new CompoundMessage("", java.util.List.of(
-                    new CompoundMessage.Attachment(origName, tempPath, 0, -1)));
+                    new CompoundMessage.Attachment(origName, secureTemp, 0, -1)));
         } else if (rawContent != null) {
             lastCompound = new CompoundMessage("", java.util.List.of(
                     new CompoundMessage.Attachment(origName, rawContent)));
@@ -1223,10 +1276,18 @@ public class ReceivePanel extends JPanel {
     }
 
     void cleanupTempFiles() {
-        for (java.nio.file.Path p : tempFiles) {
-            try { java.nio.file.Files.deleteIfExists(p); } catch (java.io.IOException ignored) {}
+        for (SecureTempFile f : tempFiles) {
+            try { f.wipeAndDelete(); } catch (Exception ignored) {}
         }
         tempFiles.clear();
+    }
+
+    /** Wipes the session-encrypted staging behind the previous tar archive, if any. */
+    private void disposeLastArchive() {
+        if (lastTarArchive != null) {
+            try { lastTarArchive.dispose(); } catch (Exception ignored) {}
+            lastTarArchive = null;
+        }
     }
 
     private void setStatus(String msg) {

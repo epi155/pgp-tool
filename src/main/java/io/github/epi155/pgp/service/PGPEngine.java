@@ -25,8 +25,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.*;
 
@@ -370,17 +368,18 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                                         List<char[]> pbePasswords,
                                         ProgressCallback progress,
                                         boolean decodeText) throws Exception {
-        Path tempFile = Files.createTempFile("pgp-nested-decrypt-", ".bin");
+        // Plaintext is staged in a session-encrypted temp file, never in clear on disk.
+        SecureTempFile tempFile = SecureTempFile.create("pgp-nested-decrypt-", ".bin");
         try {
             return decryptNestedToFile(cipherData, tempFile, secretKeys, publicKeys,
                     publicKeyUserIdByKeyId, secretKeyUserIds, pbePasswords, progress, decodeText);
         } catch (Exception e) {
-            Files.deleteIfExists(tempFile);
+            tempFile.wipeAndDelete();
             throw e;
         }
     }
 
-    public DecryptResult decryptNestedToFile(byte[] cipherData, Path tempFile,
+    public DecryptResult decryptNestedToFile(byte[] cipherData, SecureTempFile tempFile,
                                               List<PGPSecretKey> secretKeys,
                                               List<PGPPublicKey> publicKeys,
                                               Map<Long, String> publicKeyUserIdByKeyId,
@@ -540,7 +539,7 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
     private DecryptResult parseDecryptedStreamToFile(InputStream clearStream,
                                                        List<DecryptResult.EncryptionLayer> encLayers,
                                                        DecryptResult.Metadata.Builder metaBuilder,
-                                                       Path tempFile,
+                                                       SecureTempFile tempFile,
                                                        List<PGPSecretKey> secretKeys,
                                                        List<PGPPublicKey> publicKeys,
                                                        Map<Long, String> publicKeyUserIdByKeyId,
@@ -736,7 +735,7 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
     private DecryptResult parseCompressedToFile(JcaPGPObjectFactory plainFact,
                                                   Object firstContent,
                                                   DecryptResult.Metadata.Builder metaBuilder,
-                                                  Path tempFile,
+                                                  SecureTempFile tempFile,
                                                   List<PGPPublicKey> publicKeys,
                                                   Map<Long, String> publicKeyUserIdByKeyId,
                                                   boolean decodeText) throws Exception {
@@ -754,7 +753,7 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                        .modificationTime(litData.getModificationTime());
             InputStream litStream = litData.getDataStream();
             long totalWritten = 0;
-            try (OutputStream fileOut = Files.newOutputStream(tempFile)) {
+            try (OutputStream fileOut = tempFile.openWrite()) {
                 byte[] buf = new byte[CHUNK_SIZE];
                 int n;
                 while ((n = litStream.read(buf)) >= 0) {
@@ -763,8 +762,8 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                 }
             }
             byte[] rawData = totalWritten <= 50_000_000
-                    ? Files.readAllBytes(tempFile) : null;
-            byte[] verifyData = rawData != null ? rawData : Files.readAllBytes(tempFile);
+                    ? tempFile.readAllPlaintext() : null;
+            byte[] verifyData = rawData != null ? rawData : tempFile.readAllPlaintext();
             // Now read the trailing signature list
             PGPSignatureList sigList = (PGPSignatureList) plainFact.nextObject();
 
@@ -845,9 +844,10 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
             CompoundMessage compound = null;
             String plainText;
             if (totalWritten > 0) {
-                if (rawData != null && rawData.length >= 4 && (CompoundCodec.isCompound(rawData) || TarCodec.isCompound(rawData))) {
-                    try (InputStream decodeIn = Files.newInputStream(tempFile)) {
-                        if (TarCodec.isCompound(rawData)) {
+                byte[] probe = compoundProbe(tempFile, rawData, totalWritten);
+                if (probe != null && (CompoundCodec.isCompound(probe) || TarCodec.isCompound(probe))) {
+                    try (InputStream decodeIn = tempFile.openRead()) {
+                        if (TarCodec.isCompound(probe)) {
                             TarArchive tar = TarCodec.decode(decodeIn, (int) totalWritten, tempFile);
                             tarArchive = tar;
                             plainText = tar.getPlainText();
@@ -894,27 +894,28 @@ private void writeInnerLayer(OutputStream out, byte[] data, String fileName,
                        .fileName(litData.getFileName())
                        .modificationTime(litData.getModificationTime());
 
-            // Write literal data to temp file
+            // Write literal data to the session-encrypted temp file
             InputStream litStream = litData.getDataStream();
             long totalWritten;
-            try (OutputStream fileOut = Files.newOutputStream(tempFile)) {
+            try (OutputStream fileOut = tempFile.openWrite()) {
                 byte[] buf = new byte[CHUNK_SIZE];
                 int n;
                 while ((n = litStream.read(buf)) >= 0) {
                     fileOut.write(buf, 0, n);
                 }
-                totalWritten = Files.size(tempFile);
+                totalWritten = tempFile.plaintextSize();
             }
             byte[] rawData = totalWritten <= 50_000_000
-                    ? Files.readAllBytes(tempFile) : null;
+                    ? tempFile.readAllPlaintext() : null;
 
 TarArchive tarArchive = null;
             CompoundMessage compound = null;
             String plainText;
             if (totalWritten > 0) {
-                if (rawData != null && rawData.length >= 4 && (CompoundCodec.isCompound(rawData) || TarCodec.isCompound(rawData))) {
-                    try (InputStream decodeIn = Files.newInputStream(tempFile)) {
-                        if (TarCodec.isCompound(rawData)) {
+                byte[] probe = compoundProbe(tempFile, rawData, totalWritten);
+                if (probe != null && (CompoundCodec.isCompound(probe) || TarCodec.isCompound(probe))) {
+                    try (InputStream decodeIn = tempFile.openRead()) {
+                        if (TarCodec.isCompound(probe)) {
                             TarArchive tar = TarCodec.decode(decodeIn, (int) totalWritten, tempFile);
                             tarArchive = tar;
                             plainText = tar.getPlainText();
@@ -942,6 +943,23 @@ TarArchive tarArchive = null;
         }
 
         throw new PGPException("Unexpected packet: " + (message != null ? message.getClass().getName() : "null"));
+    }
+
+    /**
+     * First up-to-4 bytes of the decrypted literal data, from the in-memory copy
+     * when present, otherwise via a slice read (large literals stay off-heap).
+     * Returns null when fewer than 4 bytes are available or the slice fails.
+     */
+    private static byte[] compoundProbe(SecureTempFile tempFile, byte[] rawData, long totalWritten) {
+        if (rawData != null) {
+            return rawData.length >= 4 ? rawData : null;
+        }
+        if (totalWritten < 4) return null;
+        try {
+            return tempFile.readSlice(0, 4);
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     private PGPPublicKey findPublicKeyById(List<PGPPublicKey> keys, long keyId) {

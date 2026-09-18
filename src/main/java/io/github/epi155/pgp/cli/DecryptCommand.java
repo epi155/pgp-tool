@@ -2,8 +2,12 @@ package io.github.epi155.pgp.cli;
 
 import io.github.epi155.pgp.model.DecryptResult;
 import io.github.epi155.pgp.model.PGPKeyInfo;
+import io.github.epi155.pgp.model.TarArchive;
+import io.github.epi155.pgp.model.TarCodec;
+import io.github.epi155.pgp.model.ZipCodec;
 import io.github.epi155.pgp.service.PGPEngine;
 import io.github.epi155.pgp.service.PassphraseRequiredException;
+import io.github.epi155.pgp.service.SecureTempFile;
 import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPSecretKey;
 
@@ -12,7 +16,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,10 +37,13 @@ public final class DecryptCommand {
         }
         boolean quiet = false;
         boolean force = false;
-        boolean decodeText = true;
+        // CLI streams raw bytes (stdout or -o file); text decoding is unused here,
+        // so keep it off and avoid heap-mangling binary content.
+        final boolean decodeText = false;
         String input = null;
         String output = null;
         String outputDir = null;
+        String zipOutput = null;
         List<String> secretTokens = new ArrayList<>();
         List<String> verifyTokens = new ArrayList<>();
         List<String> passwordValues = new ArrayList<>();
@@ -56,6 +62,9 @@ public final class DecryptCommand {
                     break;
                 case "--output-dir":
                     outputDir = args.value("--output-dir");
+                    break;
+                case "--zip":
+                    zipOutput = args.value("--zip");
                     break;
                 case "--secret-key":
                     secretTokens.add(args.value("--secret-key"));
@@ -80,14 +89,6 @@ public final class DecryptCommand {
                 case "--passphrase-file":
                     passFallback.addAll(Io.readLinesFromFile(args.value("--passphrase-file")));
                     break;
-                case "--text":
-                    args.flag("--text");
-                    decodeText = true;
-                    break;
-                case "--binary":
-                    args.flag("--binary");
-                    decodeText = false;
-                    break;
                 case "--force":
                     args.flag("--force");
                     force = true;
@@ -109,7 +110,7 @@ public final class DecryptCommand {
             }
         }
         if (input == null) input = "-";
-        if (output == null && outputDir == null) output = "-";
+        if (output == null && outputDir == null && zipOutput == null) output = "-";
 
         byte[] cipher = Io.readAll(input);
 
@@ -148,14 +149,16 @@ public final class DecryptCommand {
             }
         }
 
-        Path temp = Files.createTempFile("pgp-cli-decrypt-", ".bin");
+        // Decrypted bytes are staged session-encrypted, never in clear on disk.
+        SecureTempFile temp = SecureTempFile.create("pgp-cli-decrypt-", ".bin");
+        DecryptResult result = null;
         try {
             PGPEngine engine = new PGPEngine();
             engine.setPassphraseProvider(passByKeyId::get);
             for (Map.Entry<Long, char[]> e : passByKeyId.entrySet()) {
                 engine.cachePassphrase(e.getKey(), e.getValue());
             }
-            DecryptResult result = engine.decryptNestedToFile(cipher, temp, secretKeys, verifyKeys,
+            result = engine.decryptNestedToFile(cipher, temp, secretKeys, verifyKeys,
                     verifyUid, null, pbePasswords, null, decodeText);
 
             if (!quiet) {
@@ -169,7 +172,38 @@ public final class DecryptCommand {
                     && result.getCompoundMessage().hasAttachments();
             boolean hasTarAttachments = result.getTarArchive() != null
                     && result.getTarArchive().hasAttachments();
-            if (hasTarAttachments) {
+            if (zipOutput != null) {
+                if (outputDir != null) {
+                    throw new CliException("Use either --output-dir or --zip, not both", true);
+                }
+                TarArchive archive;
+                String plainText;
+                if (hasTarAttachments) {
+                    archive = result.getTarArchive();
+                    plainText = archive.getPlainText();
+                } else if (hasCompoundAttachments) {
+                    archive = TarCodec.toTarArchive(result.getCompoundMessage());
+                    plainText = archive.getPlainText();
+                } else {
+                    throw new CliException("--zip: message contains no attachments", true);
+                }
+                Path zipPath = Path.of(zipOutput);
+                if (!zipPath.toString().endsWith(".zip")) {
+                    zipPath = zipPath.resolveSibling(zipPath.getFileName() + ".zip");
+                }
+                if (!force && Files.exists(zipPath)) {
+                    throw new CliException(zipPath + ": file exists (use --force to overwrite)", true);
+                }
+                try (java.io.OutputStream zipOut = Files.newOutputStream(zipPath)) {
+                    ZipCodec.convert(archive, zipOut);
+                } catch (IOException e) {
+                    throw new CliException("Failed to write " + zipPath + ": " + e.getMessage(), e);
+                }
+                if (!quiet) System.err.println("Wrote " + zipPath);
+                if (output != null && plainText != null && !plainText.isEmpty()) {
+                    writeText(plainText, output, force);
+                }
+            } else if (hasTarAttachments) {
                 if (outputDir == null) {
                     throw new CliException("Message contains attachments: use --output-dir <dir> to save them", true);
                 }
@@ -220,7 +254,10 @@ public final class DecryptCommand {
         } catch (Exception e) {
             throw new CliException("Decryption failed: " + messageOf(e), e);
         } finally {
-            Files.deleteIfExists(temp);
+            if (result != null && result.getTarArchive() != null) {
+                try { result.getTarArchive().dispose(); } catch (Exception ignored) {}
+            }
+            temp.wipeAndDelete();
         }
     }
 
@@ -239,9 +276,9 @@ public final class DecryptCommand {
         return spec;
     }
 
-    private static void writeFileOutput(Path src, String output, boolean force) throws CliException {
+    private static void writeFileOutput(SecureTempFile src, String output, boolean force) throws CliException {
         if ("-".equals(output)) {
-            try (InputStream in = Files.newInputStream(src)) {
+            try (InputStream in = src.openRead()) {
                 byte[] buf = new byte[65536];
                 int n;
                 while ((n = in.read(buf)) >= 0) {
@@ -257,7 +294,7 @@ public final class DecryptCommand {
                 throw new CliException(output + ": file exists (use --force to overwrite)", true);
             }
             try {
-                Files.copy(src, target, StandardCopyOption.REPLACE_EXISTING);
+                src.copyDecryptedTo(target);
             } catch (IOException e) {
                 throw new CliException("Failed to write " + output + ": " + e.getMessage(), e);
             }
@@ -304,6 +341,9 @@ public final class DecryptCommand {
                 + "  -i, --input FILE        Encrypted input, or - for stdin (default stdin)\n"
                 + "  -o, --output FILE       Output file, or - for stdout\n"
                 + "  --output-dir DIR        Save message attachments into DIR\n"
+                + "  --zip FILE              Save message attachments as a single ZIP archive\n"
+                + "                            (DEFLATE, permissions/mtime/owner/symlinks kept\n"
+                + "                            where the format allows; alternative to --output-dir)\n"
                 + "  --secret-key SPEC       Secret key: file[:passphrase], repeatable.\n"
                 + "                            The key to use is chosen automatically from the\n"
                 + "                            message's recipient IDs.\n"
@@ -319,7 +359,6 @@ public final class DecryptCommand {
                 + "                            or - to read one line from stdin\n"
                 + "  --passphrase P          Fallback secret-key passphrase (or - for stdin)\n"
                 + "  --passphrase-file FILE  Fallback passphrases, one per line\n"
-                + "  --text / --binary       Treat output as text (default text)\n"
                 + "  --force                 Overwrite the output file if it exists\n"
                 + "  --quiet                 Suppress the metadata / signature output\n"
                 + "\nExit status is 1 if a signature fails verification.\n";

@@ -1,6 +1,7 @@
 package io.github.epi155.pgp.model;
 
 import io.github.epi155.pgp.log.AppLog;
+import io.github.epi155.pgp.service.SecureTempFile;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 
@@ -25,6 +26,8 @@ public class TarArchive {
     private final TarEntry root;
     private String plainText;
     private String baseName;
+    /** Session-encrypted staging files backing large entries; wiped on {@link #dispose()}. */
+    private final List<SecureTempFile> stagingTemps = new ArrayList<>();
 
     public TarArchive() {
         this.root = TarEntry.createDirectory("");
@@ -113,6 +116,25 @@ public class TarArchive {
 
     public void addEntry(TarEntry entry) {
         root.addChild(entry);
+    }
+
+    /**
+     * Registers a session-encrypted staging file owned by this archive.
+     * It is wiped when {@link #dispose()} is called.
+     */
+    public void addStagingTemp(SecureTempFile temp) {
+        if (temp != null) stagingTemps.add(temp);
+    }
+
+    /**
+     * Wipes the session-encrypted staging files backing large entries.
+     * Safe to call multiple times. In-memory content is unaffected.
+     */
+    public void dispose() {
+        for (SecureTempFile temp : stagingTemps) {
+            try { temp.wipeAndDelete(); } catch (Exception ignored) {}
+        }
+        stagingTemps.clear();
     }
 
     public void addEntry(String path, TarEntry entry) {
@@ -242,10 +264,16 @@ public class TarArchive {
                 Files.deleteIfExists(target);
                 Files.createSymbolicLink(target, Path.of(entry.getLinkName()));
             } else {
+                boolean hasContent = false;
                 try (InputStream in = entry.getInputStream()) {
                     if (in != null) {
                         Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                        hasContent = true;
                     }
+                }
+                if (!hasContent && entry.getSize() > 0) {
+                    warnings.add("No content available for " + entry.getName()
+                            + ": entry too large to keep in memory");
                 }
                 if (entry.getModificationTime() > 0) {
                     Files.setLastModifiedTime(target, FileTime.fromMillis(entry.getModificationTime()));

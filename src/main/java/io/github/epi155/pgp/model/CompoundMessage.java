@@ -1,11 +1,10 @@
 package io.github.epi155.pgp.model;
 
+import io.github.epi155.pgp.service.SecureTempFile;
+
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -14,7 +13,7 @@ public class CompoundMessage {
 
     public static class Attachment {
         private final String filename;
-        private final Path tempFile;
+        private final SecureTempFile tempFile;
         private final long offset;
         private final long length;
         private byte[] cachedContent;
@@ -33,11 +32,11 @@ public class CompoundMessage {
             this.modificationTime = modificationTime;
         }
 
-        public Attachment(String filename, Path tempFile, long offset, long length) {
+        public Attachment(String filename, SecureTempFile tempFile, long offset, long length) {
             this(filename, tempFile, offset, length, 0);
         }
 
-        public Attachment(String filename, Path tempFile, long offset, long length, long modificationTime) {
+        public Attachment(String filename, SecureTempFile tempFile, long offset, long length, long modificationTime) {
             this.filename = filename;
             this.tempFile = tempFile;
             this.offset = offset;
@@ -50,10 +49,20 @@ public class CompoundMessage {
 
         public long getModificationTime() { return modificationTime; }
 
+        /** Session-encrypted backing store, or null when content is in-memory. */
+        public SecureTempFile getTempFile() { return tempFile; }
+
+        /** Plaintext-space offset of this attachment inside {@link #getTempFile()}. */
+        public long getOffset() { return offset; }
+
+        /** Plaintext-space length inside {@link #getTempFile()}, or &lt;0 for whole file. */
+        public long getLength() { return length; }
+
         public byte[] getContent() {
             if (cachedContent == null && tempFile != null) {
                 try {
-                    cachedContent = Files.readAllBytes(tempFile);
+                    long len = length >= 0 ? length : tempFile.plaintextSize() - offset;
+                    cachedContent = tempFile.readSlice(offset, len);
                 } catch (IOException e) {
                     throw new RuntimeException("Failed to read attachment from temp file", e);
                 }
@@ -63,9 +72,7 @@ public class CompoundMessage {
 
         public long getContentLength() {
             if (length >= 0) return length;
-            if (tempFile != null) {
-                try { return java.nio.file.Files.size(tempFile); } catch (IOException ignored) {}
-            }
+            if (tempFile != null) return tempFile.plaintextSize();
             if (cachedContent != null) return cachedContent.length;
             return 0;
         }
@@ -74,24 +81,7 @@ public class CompoundMessage {
             if (cachedContent != null) {
                 Files.write(target, cachedContent);
             } else if (tempFile != null) {
-                long fileSize = Files.size(tempFile);
-                if (offset == 0 && (length < 0 || length == fileSize)) {
-                    Files.copy(tempFile, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                } else {
-                    try (InputStream in = Files.newInputStream(tempFile, StandardOpenOption.READ);
-                         OutputStream out = Files.newOutputStream(target)) {
-                        in.skip(offset);
-                        long remaining = length >= 0 ? length : fileSize - offset;
-                        byte[] buf = new byte[65536];
-                        while (remaining > 0) {
-                            int chunk = (int) Math.min(buf.length, remaining);
-                            int n = in.read(buf, 0, chunk);
-                            if (n < 0) break;
-                            out.write(buf, 0, n);
-                            remaining -= n;
-                        }
-                    }
-                }
+                tempFile.copySliceTo(target, offset, length);
             }
         }
 
