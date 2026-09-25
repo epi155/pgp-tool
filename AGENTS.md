@@ -73,7 +73,7 @@ Default compression is ZLIB (same as the GUI and gpg).
 
 ## Key architecture facts
 
-- **Java 11**, Swing GUI, **Bouncy Castle 1.84** (`bcprov-jdk18on`, `bcpg-jdk18on`), **commons-compress 1.28.0**
+- **Java 11**, Swing GUI, **Bouncy Castle 1.86** (`bcprov-jdk18on`, `bcpg-jdk18on`), **commons-compress 1.28.0**
   (`commons-codec`/`commons-io`/`commons-lang3` arrive transitively — no direct declaration; `zstd-jni` is
   optional in compress so it never leaks into the fat jar)
 - Packages: `model/` (data classes), `service/` (PGP logic), `ui/` (Swing), `cli/` (headless batch commands)
@@ -89,7 +89,7 @@ Default compression is ZLIB (same as the GUI and gpg).
   exactly like the GUI panels do (first layer = `encrypt`/`encryptPassword` with sign+compress,
   outer layers = `encryptRaw`/`encryptRawPassword`, armor only on the outermost layer)
 
-## BC 1.84 quirks
+## BC 1.86 quirks
 
 - **SHAKE256 (hash tag 27) not supported** anywhere in BC's OpenPGP layer (`HashAlgorithmTags`, `PGPUtil.getDigestName()`, `BcImplProvider.createDigest()`). Ed448 keys use custom `Ed448PGPContentSignerBuilder` / `Ed448PGPContentVerifierBuilderProvider` that wrap JCA `Signature.getInstance("Ed448")` + BC lightweight `SHAKEDigest(256)`.
 - **Null password keys**: must use anonymous `PBESecretKeyEncryptor` subclass with `SymmetricKeyAlgorithmTags.NULL` and passthrough `encryptKeyData()`. `JcePBESecretKeyEncryptorBuilder.build(new char[0])` does NOT produce a NULL-protected key.
@@ -99,7 +99,7 @@ Default compression is ZLIB (same as the GUI and gpg).
 ## Custom AEAD tags (100-102 Serpent-OCB, 103 ChaCha20-Poly1305, 104 ASCON)
 
 All five custom symmetric tags are AEAD streams (no MDC; `getIntegrityCalculator()` returns `null`), emitted as
-LibrePGP-style **AEAD Encrypted Data packets (tag 20, version 1)** that BC 1.84 parses back. Shared framing lives in
+LibrePGP-style **AEAD Encrypted Data packets (tag 20, version 1)** that BC 1.86 parses back. Shared framing lives in
 `CustomAeadEncryptor`, which dispatches on the tag to an internal `AeadEngine` (interface:
 `init(forEnc, nonce)`, `updateAad(bytes)`, `finish(in, off, len)`):
 
@@ -108,7 +108,7 @@ LibrePGP-style **AEAD Encrypted Data packets (tag 20, version 1)** that BC 1.84 
 - **100-102 | Serpent-128/192/256** (`SerpentTags`): lightweight `OCBBlockCipher(new SerpentEngine(), new SerpentEngine())` +
   `AEADParameters(key, 128, nonce)` (OCB3, RFC 7253). Packet byte `aeadAlgorithm=OCB(2)` → BC derives a **15-byte** IV; gpg shows
   `cipher=100/101/102 aead=2 cb=10`. User-facing labels remain "Serpent-128/192/256".
-- **104 | ASCON** (`AsconTags.ASCON_128`): lightweight `AsconEngine(AsconEngine.AsconParameters.ascon128)` (BC 1.84,
+- **104 | ASCON** (`AsconTags.ASCON_128`): lightweight `AsconEngine(AsconEngine.AsconParameters.ascon128)` (BC 1.86,
   NIST SP 800-232 family) + `AEADParameters(key, 128, nonce)`. ASCON uses a 128-bit nonce, so the packet byte is
   `aeadAlgorithm=EAX(1)` → BC derives a **16-byte** IV; gpg shows `cipher=104 aead=1 cb=10`. The EAX byte is a
   **masquerade** (the construction is ASCON, not EAX) — only this tool reads these messages. User-facing label "ASCON".
@@ -278,7 +278,7 @@ New encryption produces PAX tar archives (`LONGFILE_POSIX`) with full metadata p
 ## Common pitfalls
 
 - `Ed448PGPContentSignerBuilder` / `Ed448PGPContentVerifierBuilderProvider` must be used whenever hash tag 27 (SHAKE256) is the algorithm — standard BC builders throw `PGPException("unknown hash algorithm tag")`
-- **Signature hashes**: the selectable set (CLI `--sign-key ...:HASH`, GUI `hashCombo`) is **SHA-256, SHA-384, SHA-512, SHA3-256, SHA3-512** (RIPEMD160 removed). `Names.hash()` / `SendPanel.mapHashAlgo()` map names to tags; `DecryptResult.Metadata.hashName()` renders them. Only tags 12/14 (SHA3-256/SHA3-512) are standard in BC 1.84 — `HashAlgorithmTags.SHA3_224/384` are **312/314, non-standard**, so SHA3-384/224 cannot be signed interoperably (the packet would carry the wrong tag); they exist in `hashName()` only as display labels for foreign messages. Ed25519 forces SHA-512 and Ed448 forces SHAKE256 via `PGPEngine.defaultHashForAlgo()` (a requested hash is ignored for those keys). SHA3 JCA names are `SHA3-256with{RSA,ECDSA}`/`SHA3-512with{RSA,ECDSA}` (BC provider).
+- **Signature hashes**: the selectable set (CLI `--sign-key ...:HASH`, GUI `hashCombo`) is **SHA-256, SHA-384, SHA-512, SHA3-256, SHA3-512** (RIPEMD160 removed). `Names.hash()` / `SendPanel.mapHashAlgo()` map names to tags; `DecryptResult.Metadata.hashName()` renders them. Only tags 12/14 (SHA3-256/SHA3-512) are standard in BC 1.86 — `HashAlgorithmTags.SHA3_224/384` are **312/314, non-standard**, so SHA3-384/224 cannot be signed interoperably (the packet would carry the wrong tag); they exist in `hashName()` only as display labels for foreign messages. Ed25519 forces SHA-512 and Ed448 forces SHAKE256 via `PGPEngine.defaultHashForAlgo()` (a requested hash is ignored for those keys). SHA3 JCA names are `SHA3-256with{RSA,ECDSA}`/`SHA3-512with{RSA,ECDSA}` (BC provider).
 - **`checksum mismatch in checksum of 2 bytes`** = wrong/missing passphrase on a secret key. `PGPEngine.extractPrivateKey()` translates it to `PassphraseRequiredException` (key ID + first user-id); `EncryptCommand`/`DecryptCommand` catch it and prepend the keyring path
 - **Decrypt integrity**: after fully reading each encrypted layer, `PGPEngine.verifyEncryptionIntegrity()` calls `PGPEncryptedData.verify()` (inner→outer) — the MDC is compared, and on the outermost armored layer the decrypting stream is drained to EOF so the **armor CRC24** fires on the `=XXXX` line. Corruption anywhere in an armored/binary message now **hard-fails** decryption (`Integrity check failed (MDC)` or `crc check failed in armored message`), matching gpg. Layers without integrity protection (old no-MDC messages, `isIntegrityProtected()` false) are skipped; AEAD layers (100-104) self-verify during reading. `decryptNestedToFile` also drains the input to EOF after parsing, so unencrypted armored messages (signed/compressed only) get their CRC checked too.
 - `DecryptResult.Metadata.hashName()` has a hardcoded switch for display names — add new hash tags there

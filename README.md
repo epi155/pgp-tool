@@ -1,7 +1,7 @@
 # PGP Tool
 
 A cross-platform **OpenPGP** utility with both a Swing GUI and a headless batch interface.
-It is built on [Bouncy Castle](https://www.bouncycastle.org/) 1.84 and is designed to
+It is built on [Bouncy Castle](https://www.bouncycastle.org/) 1.86 and is designed to
 interoperate with **GnuPG** and other OpenPGP implementations.
 
 Beyond the standard suite, PGP Tool ships a few **private-use extension algorithms**

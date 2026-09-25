@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bouncy Castle 1.84 → 1.86 (security: 32 CVEs fixed in 1.85 including OpenPGP
+  CFB quick-check oracle, inline-signature policy, AEAD final tag, Argon2 S2K and
+  user-attribute DoS paths; side-channel hardening in 1.86). No compat changes
+  needed — verified with RSA/ECDSA/Ed25519/Ed448 sign+verify, password layers,
+  custom AEAD tags 100-104, tar+symlink round-trip and bidirectional gpg interop.
+  Fat jar shrinks ~1.6 MB (bcprov 8.9 → 7.2 MB)
 - commons-compress 1.26.0 → 1.28.0 (Java 8+, no removed tar/zip APIs in use); the direct
   commons-codec dependency is dropped — codec 1.19.0 (plus commons-io/commons-lang3) now
   arrives transitively via compress, which needs it at runtime

@@ -27,7 +27,7 @@ import java.security.SecureRandom;
  * AEAD encryptor/decryptor for the custom symmetric tags (103 = ChaCha20-Poly1305,
  * 100-102 = Serpent-OCB, 104 = ASCON).
  * <p>
- * Emits the LibrePGP-style AEAD Encrypted Data packet (tag 20, version 1) that BouncyCastle 1.84
+ * Emits the LibrePGP-style AEAD Encrypted Data packet (tag 20, version 1) that BouncyCastle 1.86
  * can parse back. The {@code aeadAlgorithm} byte in the packet drives BC's IV length on read
  * ({@code AEADUtils.getIVLength}): GCM (3) -&gt; 12-byte IV for tag 103, OCB (2) -&gt; 15-byte IV for
  * tags 100-102, EAX (1) -&gt; 16-byte IV for tag 104. The actual construction is selected by the
