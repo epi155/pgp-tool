@@ -73,7 +73,9 @@ Default compression is ZLIB (same as the GUI and gpg).
 
 ## Key architecture facts
 
-- **Java 11**, Swing GUI, **Bouncy Castle 1.84** (`bcprov-jdk18on`, `bcpg-jdk18on`), **commons-compress 1.26.0**, **commons-codec 1.17.1**
+- **Java 11**, Swing GUI, **Bouncy Castle 1.84** (`bcprov-jdk18on`, `bcpg-jdk18on`), **commons-compress 1.28.0**
+  (`commons-codec`/`commons-io`/`commons-lang3` arrive transitively — no direct declaration; `zstd-jni` is
+  optional in compress so it never leaks into the fat jar)
 - Packages: `model/` (data classes), `service/` (PGP logic), `ui/` (Swing), `cli/` (headless batch commands)
 - Entry: `io.github.epi155.pgp.PGPTool`
 - `PGPEngine` is the core — all encrypt/decrypt/sign/verify logic, ~770 lines, stateful (passphrase cache, providers)
@@ -264,9 +266,9 @@ New encryption produces PAX tar archives (`LONGFILE_POSIX`) with full metadata p
 
 ### Known quirks
 
-- **commons-compress 1.26**: `TarArchiveEntry.setMode(int)` does NOT update the internal `linkFlag`
+- **commons-compress 1.28**: `TarArchiveEntry.setMode(int)` does NOT update the internal `linkFlag`
   field — use reflection to set it for symlinks
-- **commons-compress 1.26**: `TarArchiveEntry(File, String)` constructor does NOT read POSIX permissions
+- **commons-compress 1.28**: `TarArchiveEntry(File, String)` constructor does NOT read POSIX permissions
   from the filesystem — always returns default 0100644; must use `PosixFileAttributes` explicitly
 - **Permission fix**: `setLastModifiedTime` follows symlinks; if the symlink target doesn't exist yet
   (flat extraction order), it throws `NoSuchFileException` — must skip mtime set for symlinks

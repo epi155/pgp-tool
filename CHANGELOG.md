@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- commons-compress 1.26.0 → 1.28.0 (Java 8+, no removed tar/zip APIs in use); the direct
+  commons-codec dependency is dropped — codec 1.19.0 (plus commons-io/commons-lang3) now
+  arrives transitively via compress, which needs it at runtime
 - DecryptCommand streams raw bytes (`decodeText` always `false`); removed `--text`/`--binary` flags (CLI never decoded literal data as text)
 - `TarCodec.encode` stages plaintext tar through `SecureTempFile` instead of a plain temp file
 - `DecryptResult` exposes `getSecureTempFile()` instead of `getTempFilePath()` — temp staging is always session-encrypted
