@@ -68,6 +68,11 @@ public class CustomPGPDataEncryptorBuilder implements PGPDataEncryptorBuilder {
     }
 
     @Override
+    public PGPDataEncryptor build(byte[] key, byte[] salt) throws PGPException {
+        throw new UnsupportedOperationException("v2 SEIPD (v6 AEAD) not supported for custom algorithms");
+    }
+
+    @Override
     public SecureRandom getSecureRandom() {
         return secureRandom;
     }

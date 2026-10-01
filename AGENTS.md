@@ -91,6 +91,11 @@ Default compression is ZLIB (same as the GUI and gpg).
 
 ## BC 1.86 quirks
 
+- **`PGPDataEncryptorBuilder.build(byte[], byte[])`** (new abstract method in BC 1.85, for v2 SEIPD/v6 AEAD
+  key derivation per RFC 9580 §5.13.2): `CustomPGPDataEncryptorBuilder` implements it with
+  `UnsupportedOperationException` — custom tags only emit LibrePGP tag-20-v1 packets, never v2 SEIPD.
+  NOTE: always verify with `mvn clean` — incremental builds reuse stale classes and mask missing overrides.
+
 - **SHAKE256 (hash tag 27) not supported** anywhere in BC's OpenPGP layer (`HashAlgorithmTags`, `PGPUtil.getDigestName()`, `BcImplProvider.createDigest()`). Ed448 keys use custom `Ed448PGPContentSignerBuilder` / `Ed448PGPContentVerifierBuilderProvider` that wrap JCA `Signature.getInstance("Ed448")` + BC lightweight `SHAKEDigest(256)`.
 - **Null password keys**: must use anonymous `PBESecretKeyEncryptor` subclass with `SymmetricKeyAlgorithmTags.NULL` and passthrough `encryptKeyData()`. `JcePBESecretKeyEncryptorBuilder.build(new char[0])` does NOT produce a NULL-protected key.
 - **Key extraction fallback**: `extractPrivateKey()` tries JCE first, falls back to `BcPBESecretKeyDecryptorBuilder`.
