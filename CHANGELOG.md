@@ -67,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--output-dir` no longer dumps plaintext body to stdout when decrypting tar or compound messages
 - GUI now shows `[Binary content — see attachment tree]` placeholder instead of garbled text when the decrypted plaintext is binary
 - Signing and encryption key selection without `#id` now picks the last capable subkey per master key (gpg convention) instead of all capable keys
+- GUI single-file decrypt now always shows the file in the attachment tree (also after a successful immediate save) and the Save button only enables for an actual file selection — selecting the empty Attachments root no longer enables a save that cannot succeed
 - GUI popups in CLI batch mode: `AppLog.setGuiDisabled(true)` prevents `JOptionPane` dialogs in headless-like CLI dispatch
 - 777 permissions bug: `TarArchive.extractTo()` was calling `setLastModifiedTime` on symlinks which followed to non-existent targets, causing exceptions that prevented permission restoration on subsequent files
 - Exception cause destruction in `CliException`: all 19 wrapping sites now preserve the original exception cause instead of discarding it

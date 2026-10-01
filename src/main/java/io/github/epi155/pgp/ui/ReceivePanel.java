@@ -240,7 +240,7 @@ public class ReceivePanel extends JPanel {
         exportZipButton = new JButton("Export zip...");
         exportZipButton.setEnabled(false);
         attachTree.addTreeSelectionListener(e ->
-                saveAttachButton.setEnabled(attachTree.getSelectionCount() > 0));
+                saveAttachButton.setEnabled(!getSelectedLeafNodes().isEmpty()));
 
         // Key bindings for attachment tree
         InputMap im = attachTree.getInputMap(JComponent.WHEN_FOCUSED);
@@ -632,8 +632,10 @@ public class ReceivePanel extends JPanel {
             Object node = path.getLastPathComponent();
             if (node instanceof AttachmentNode) {
                 AttachmentNode an = (AttachmentNode) node;
-                if (an.isLeaf()) {
-                    result.add(an);
+                if (an.getKind() == AttachmentNode.Kind.ROOT) {
+                    if (an.getChildCount() > 0) collectLeafChildren(an, result);
+                } else if (an.isLeaf()) {
+                    if (isSavable(an)) result.add(an);
                 } else {
                     collectLeafChildren(an, result);
                 }
@@ -642,11 +644,19 @@ public class ReceivePanel extends JPanel {
         return result;
     }
 
+    private static boolean isSavable(AttachmentNode node) {
+        return node.getKind() == AttachmentNode.Kind.FILE
+                || node.getKind() == AttachmentNode.Kind.TAR_ENTRY
+                || node.getKind() == AttachmentNode.Kind.COMPOUND_ENTRY;
+    }
+
     private void collectLeafChildren(AttachmentNode node, List<AttachmentNode> result) {
         for (int i = 0; i < node.getChildCount(); i++) {
             AttachmentNode child = (AttachmentNode) node.getChildAt(i);
-            if (child.isLeaf()) {
-                result.add(child);
+            if (child.getKind() == AttachmentNode.Kind.ROOT) {
+                collectLeafChildren(child, result);
+            } else if (child.isLeaf()) {
+                if (isSavable(child)) result.add(child);
             } else {
                 collectLeafChildren(child, result);
             }
@@ -1071,6 +1081,7 @@ public class ReceivePanel extends JPanel {
 
             JFileChooser fc = new JFileChooser();
             fc.setSelectedFile(new File(origName));
+            AttachmentNode fileNode;
             if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
                 java.nio.file.Path dest = fc.getSelectedFile().toPath();
                 try {
@@ -1080,15 +1091,18 @@ public class ReceivePanel extends JPanel {
                         java.nio.file.Files.write(dest, rawContent);
                     }
                     plainTextArea.setText("[Decrypted file saved to: " + dest + "]");
-                    saveAttachButton.setEnabled(false);
+                    fileNode = wrapBinaryAsAttachment(result, origName, secureTemp, rawContent);
                 } catch (Exception ex) {
                     UIUtils.showError(this, "Error saving file:\n" + ex.getMessage(), ex);
                     plainTextArea.setText("[Error saving file. Use 'Save attachment' to retry.]");
-                    wrapBinaryAsAttachment(result, origName, secureTemp, rawContent);
+                    fileNode = wrapBinaryAsAttachment(result, origName, secureTemp, rawContent);
                 }
             } else {
                 plainTextArea.setText("[Decrypted file not saved. Use the 'Save attachment' button to save it.]");
-                wrapBinaryAsAttachment(result, origName, secureTemp, rawContent);
+                fileNode = wrapBinaryAsAttachment(result, origName, secureTemp, rawContent);
+            }
+            if (fileNode != null) {
+                attachTree.setSelectionPath(new javax.swing.tree.TreePath(fileNode.getPath()));
             }
         } else {
             setPlainTextOrPlaceholder(result.getPlainText());
@@ -1130,7 +1144,7 @@ public class ReceivePanel extends JPanel {
         updateShowUsedButton();
     }
 
-    private void wrapBinaryAsAttachment(DecryptResult result, String origName,
+    private AttachmentNode wrapBinaryAsAttachment(DecryptResult result, String origName,
                                           SecureTempFile secureTemp, byte[] rawContent) {
         if (secureTemp != null) {
             lastCompound = new CompoundMessage("", java.util.List.of(
@@ -1143,8 +1157,10 @@ public class ReceivePanel extends JPanel {
             lastCompound = new CompoundMessage("", java.util.List.of(
                     new CompoundMessage.Attachment(origName, content)));
         }
-        attachRoot.add(AttachmentNode.ofCompound(lastCompound.getAttachments().get(0)));
+        AttachmentNode fileNode = AttachmentNode.ofCompound(lastCompound.getAttachments().get(0));
+        attachRoot.add(fileNode);
         attachTreeModel.reload();
+        return fileNode;
     }
 
     private void addTarEntryToTree(TarEntry entry) {
